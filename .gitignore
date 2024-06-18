@@ -1,0 +1,33 @@
+# Project
+examples/data
+examples/**.yaml
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Mac
+.DS_Store
+**/.DS_Store
+
+# VS Code
+.vscode
+*.project
+*.factorypath
+
+# IntelliJ IDEA
+.idea/*
+!.idea/icon.png
+*.iws
+*.iml
+*.ipr
+
+# Test binary
+*.test
+
+# Output
+*.out
+

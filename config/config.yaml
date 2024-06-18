@@ -1,0 +1,36 @@
+port: 2015
+devMode: true
+jwtSecurity: {{.JwtSecurity}}
+jwtLifetime: 30d
+log:
+  logFile: error.log
+  logPath: logs
+  maxSize: 200
+  maxBackups: 3
+  maxAge: 30
+  compress: true
+  useCaller: true
+redis:
+  store:
+    addr: 127.0.0.1:6379
+    username: ""
+    pwd: ""
+    db: 1
+    minIdleConns: 10
+    idleTimeout: 5m0s
+mysql:
+  logic:
+    host: 127.0.0.1
+    port: 3306
+    user: root
+    password: 123456
+    database: test
+    prefix: t_
+    idle: 10
+    idleTime: 1h0m0s
+    maxLifetime: 1h0m0s
+    heartBeatTime: 30s
+    LogLevel: 4
+    active: 50
+    maxOpen: 20
+    enable: 1
