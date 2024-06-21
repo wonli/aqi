@@ -20,14 +20,14 @@ func Dispatcher(c *Client, request string) {
 	if c.User != nil {
 		isBanned, bandTime := c.User.IsBanned()
 		if isBanned {
-			c.SendRawMsg(21, "sys.ban", "You have been ban", bandTime)
+			c.SendRawMsg(-11, "sys.ban", "You have been ban", bandTime)
 			return
 		}
 	}
 
 	//请求频率限制5毫秒
 	if t.Sub(c.LastRequestTime).Microseconds() <= 5 {
-		c.SendRawMsg(23, "sys.requestLimit", "Your requests are too frequent", nil)
+		c.SendRawMsg(-13, "sys.requestLimit", "Your requests are too frequent", nil)
 		return
 	} else {
 		//更新最后请求时间
@@ -42,7 +42,7 @@ func Dispatcher(c *Client, request string) {
 
 	handlers := InitManager().Handlers(action)
 	if handlers == nil || len(handlers) == 0 {
-		c.SendRawMsg(25, action, "Request not supported", nil)
+		c.SendRawMsg(-15, action, "Request not supported", nil)
 		return
 	}
 
