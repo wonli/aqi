@@ -38,7 +38,6 @@ func (m *SqlServerStore) Use() *gorm.DB {
 		},
 	}
 
-	conf = &gorm.Config{}
 	db, err := gorm.Open(sqlserver.Open(r.GetDsn()), conf)
 	if err != nil {
 		logger.SugarLog.Errorf("%s (gorm.open)", err.Error())
