@@ -1,5 +1,9 @@
 package store
 
+import "gorm.io/gorm"
+
+type callback func(db *gorm.DB)
+
 func DB(configKey string) *MySQLStore {
 	return &MySQLStore{configKey: configKey}
 }

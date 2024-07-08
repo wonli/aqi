@@ -14,6 +14,9 @@ import (
 
 type MySQLStore struct {
 	configKey string
+
+	callback    callback
+	hasCallback bool
 }
 
 func (m *MySQLStore) Config() *config.MySQL {
@@ -24,6 +27,11 @@ func (m *MySQLStore) Config() *config.MySQL {
 	}
 
 	return r
+}
+
+func (m *MySQLStore) Callback(fn callback) {
+	m.callback = fn
+	m.hasCallback = true
 }
 
 func (m *MySQLStore) Use() *gorm.DB {
@@ -47,6 +55,10 @@ func (m *MySQLStore) Use() *gorm.DB {
 	if err != nil {
 		logger.SugarLog.Error("Failed to connect to MySQL database", zap.String("error", err.Error()))
 		return nil
+	}
+
+	if m.hasCallback {
+		m.callback(db)
 	}
 
 	sqlDB, err := db.DB()

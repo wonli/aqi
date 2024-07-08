@@ -13,6 +13,9 @@ import (
 
 type SqlServerStore struct {
 	configKey string
+
+	callback    callback
+	hasCallback bool
 }
 
 func (m *SqlServerStore) Config() *config.SqlServer {
@@ -23,6 +26,11 @@ func (m *SqlServerStore) Config() *config.SqlServer {
 	}
 
 	return r
+}
+
+func (m *SqlServerStore) Callback(fn callback) {
+	m.callback = fn
+	m.hasCallback = true
 }
 
 func (m *SqlServerStore) Use() *gorm.DB {
@@ -42,6 +50,10 @@ func (m *SqlServerStore) Use() *gorm.DB {
 	if err != nil {
 		logger.SugarLog.Errorf("%s (gorm.open)", err.Error())
 		return nil
+	}
+
+	if m.hasCallback {
+		m.callback(db)
 	}
 
 	sqlDB, err := db.DB()

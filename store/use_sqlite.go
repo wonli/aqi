@@ -14,6 +14,9 @@ import (
 
 type SQLiteStore struct {
 	configKey string
+
+	callback    callback
+	hasCallback bool
 }
 
 func (m *SQLiteStore) Config() *config.Sqlite {
@@ -24,6 +27,11 @@ func (m *SQLiteStore) Config() *config.Sqlite {
 	}
 
 	return r
+}
+
+func (m *SQLiteStore) Callback(fn callback) {
+	m.callback = fn
+	m.hasCallback = true
 }
 
 func (m *SQLiteStore) Use() *gorm.DB {
@@ -43,6 +51,10 @@ func (m *SQLiteStore) Use() *gorm.DB {
 	if err != nil {
 		logger.SugarLog.Error("Connect to SQLite error", zap.String("error", err.Error()))
 		return nil
+	}
+
+	if m.hasCallback {
+		m.callback(db)
 	}
 
 	sqlDB, err := db.DB()
