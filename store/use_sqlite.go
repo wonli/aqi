@@ -15,6 +15,7 @@ import (
 type SQLiteStore struct {
 	configKey string
 
+	options     *gorm.Config
 	callback    callback
 	hasCallback bool
 }
@@ -27,6 +28,10 @@ func (m *SQLiteStore) Config() *config.Sqlite {
 	}
 
 	return r
+}
+
+func (m *SQLiteStore) Options(options *gorm.Config) {
+	m.options = options
 }
 
 func (m *SQLiteStore) Callback(fn callback) {
@@ -45,6 +50,18 @@ func (m *SQLiteStore) Use() *gorm.DB {
 		NamingStrategy: schema.NamingStrategy{
 			TablePrefix: r.Prefix,
 		},
+	}
+
+	if m.options != nil {
+		if m.options.Logger == nil {
+			m.options.Logger = conf.Logger
+		}
+
+		if m.options.NamingStrategy == nil {
+			m.options.NamingStrategy = conf.NamingStrategy
+		}
+	} else {
+		m.options = conf
 	}
 
 	db, err := gorm.Open(sqlite.Open(r.Database), conf)

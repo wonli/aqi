@@ -15,6 +15,7 @@ import (
 type MySQLStore struct {
 	configKey string
 
+	options     *gorm.Config
 	callback    callback
 	hasCallback bool
 }
@@ -27,6 +28,10 @@ func (m *MySQLStore) Config() *config.MySQL {
 	}
 
 	return r
+}
+
+func (m *MySQLStore) Options(options *gorm.Config) {
+	m.options = options
 }
 
 func (m *MySQLStore) Callback(fn callback) {
@@ -49,6 +54,18 @@ func (m *MySQLStore) Use() *gorm.DB {
 		NamingStrategy: schema.NamingStrategy{
 			TablePrefix: r.Prefix,
 		},
+	}
+
+	if m.options != nil {
+		if m.options.Logger == nil {
+			m.options.Logger = conf.Logger
+		}
+
+		if m.options.NamingStrategy == nil {
+			m.options.NamingStrategy = conf.NamingStrategy
+		}
+	} else {
+		m.options = conf
 	}
 
 	db, err := gorm.Open(mysql.Open(r.GetDsn()), conf)

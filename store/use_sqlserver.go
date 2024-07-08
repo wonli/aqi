@@ -14,6 +14,7 @@ import (
 type SqlServerStore struct {
 	configKey string
 
+	options     *gorm.Config
 	callback    callback
 	hasCallback bool
 }
@@ -26,6 +27,10 @@ func (m *SqlServerStore) Config() *config.SqlServer {
 	}
 
 	return r
+}
+
+func (m *SqlServerStore) Options(options *gorm.Config) {
+	m.options = options
 }
 
 func (m *SqlServerStore) Callback(fn callback) {
@@ -46,7 +51,19 @@ func (m *SqlServerStore) Use() *gorm.DB {
 		},
 	}
 
-	db, err := gorm.Open(sqlserver.Open(r.GetDsn()), conf)
+	if m.options != nil {
+		if m.options.Logger == nil {
+			m.options.Logger = conf.Logger
+		}
+
+		if m.options.NamingStrategy == nil {
+			m.options.NamingStrategy = conf.NamingStrategy
+		}
+	} else {
+		m.options = conf
+	}
+
+	db, err := gorm.Open(sqlserver.Open(r.GetDsn()), m.options)
 	if err != nil {
 		logger.SugarLog.Errorf("%s (gorm.open)", err.Error())
 		return nil
