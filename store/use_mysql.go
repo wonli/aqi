@@ -15,6 +15,7 @@ import (
 type MySQLStore struct {
 	configKey string
 
+	gormDB      *gorm.DB
 	options     *gorm.Config
 	callback    callback
 	hasCallback bool
@@ -30,6 +31,10 @@ func (m *MySQLStore) Config() *config.MySQL {
 	return r
 }
 
+func (m *MySQLStore) ConfigKey() string {
+	return m.configKey
+}
+
 func (m *MySQLStore) Options(options *gorm.Config) {
 	m.options = options
 }
@@ -40,6 +45,10 @@ func (m *MySQLStore) Callback(fn callback) {
 }
 
 func (m *MySQLStore) Use() *gorm.DB {
+	if m.gormDB != nil {
+		return m.gormDB
+	}
+
 	r := m.Config()
 	if r == nil {
 		return nil
@@ -90,5 +99,6 @@ func (m *MySQLStore) Use() *gorm.DB {
 		sqlDB.SetMaxOpenConns(r.MaxOpen)
 	}
 
+	m.gormDB = db
 	return db
 }

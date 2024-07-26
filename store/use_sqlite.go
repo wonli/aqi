@@ -15,6 +15,7 @@ import (
 type SQLiteStore struct {
 	configKey string
 
+	gormDB      *gorm.DB
 	options     *gorm.Config
 	callback    callback
 	hasCallback bool
@@ -30,6 +31,10 @@ func (m *SQLiteStore) Config() *config.Sqlite {
 	return r
 }
 
+func (m *SQLiteStore) ConfigKey() string {
+	return m.configKey
+}
+
 func (m *SQLiteStore) Options(options *gorm.Config) {
 	m.options = options
 }
@@ -40,6 +45,10 @@ func (m *SQLiteStore) Callback(fn callback) {
 }
 
 func (m *SQLiteStore) Use() *gorm.DB {
+	if m.gormDB != nil {
+		return m.gormDB
+	}
+
 	r := m.Config()
 	if r == nil {
 		return nil
@@ -89,5 +98,6 @@ func (m *SQLiteStore) Use() *gorm.DB {
 		sqlDB.SetMaxOpenConns(r.MaxOpenConns)
 	}
 
+	m.gormDB = db
 	return db
 }

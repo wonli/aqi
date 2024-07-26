@@ -14,6 +14,7 @@ import (
 type SqlServerStore struct {
 	configKey string
 
+	gormDB      *gorm.DB
 	options     *gorm.Config
 	callback    callback
 	hasCallback bool
@@ -29,6 +30,10 @@ func (m *SqlServerStore) Config() *config.SqlServer {
 	return r
 }
 
+func (m *SqlServerStore) ConfigKey() string {
+	return m.configKey
+}
+
 func (m *SqlServerStore) Options(options *gorm.Config) {
 	m.options = options
 }
@@ -39,6 +44,10 @@ func (m *SqlServerStore) Callback(fn callback) {
 }
 
 func (m *SqlServerStore) Use() *gorm.DB {
+	if m.gormDB != nil {
+		return m.gormDB
+	}
+
 	r := m.Config()
 	if r == nil {
 		return nil
@@ -91,5 +100,6 @@ func (m *SqlServerStore) Use() *gorm.DB {
 		sqlDB.SetMaxOpenConns(r.MaxOpen)
 	}
 
+	m.gormDB = db
 	return db
 }

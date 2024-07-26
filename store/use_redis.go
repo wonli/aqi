@@ -8,7 +8,8 @@ import (
 )
 
 type RedisStore struct {
-	configKey string
+	redisClient *redis.Client
+	configKey   string
 }
 
 func (s *RedisStore) Config() *config.Redis {
@@ -21,7 +22,15 @@ func (s *RedisStore) Config() *config.Redis {
 	return r
 }
 
+func (s *RedisStore) ConfigKey() string {
+	return s.configKey
+}
+
 func (s *RedisStore) Use() *redis.Client {
+	if s.redisClient != nil {
+		return s.redisClient
+	}
+
 	r := s.Config()
 	if r == nil {
 		return nil
@@ -36,5 +45,6 @@ func (s *RedisStore) Use() *redis.Client {
 		ConnMaxIdleTime: r.IdleTimeout,
 	})
 
+	s.redisClient = client
 	return client
 }
