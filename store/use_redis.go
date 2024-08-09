@@ -4,7 +4,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 
-	"github.com/wonli/aqi/config"
+	"github.com/wonli/aqi/internal/config"
 )
 
 type RedisStore struct {

@@ -8,7 +8,7 @@ import (
 	gormLogger "gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
 
-	"github.com/wonli/aqi/config"
+	"github.com/wonli/aqi/internal/config"
 	"github.com/wonli/aqi/logger"
 )
 

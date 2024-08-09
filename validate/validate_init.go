@@ -18,22 +18,22 @@ import (
 )
 
 var sg sync.Once
-var vc *validatorConfig
+var vc *ValidatorConfig
 
-type validatorConfig struct {
+type ValidatorConfig struct {
 	locale string
 	zh     locales.Translator
 	en     locales.Translator
 }
 
 // InitTranslator validator默认仅支持中英文
-func InitTranslator(locale string) *validatorConfig {
+func InitTranslator(locale string) *ValidatorConfig {
 	sg.Do(func() {
 		zhl := zh.New() // 中文翻译器
 		enl := en.New() // 英文翻译器
 
 		//赋值给valid
-		vc = &validatorConfig{
+		vc = &ValidatorConfig{
 			locale: locale,
 			zh:     zhl,
 			en:     enl,
@@ -45,7 +45,7 @@ func InitTranslator(locale string) *validatorConfig {
 
 // 处理字段名称
 // 中文使用label标签，其他语言label+语言名称，没有设置时使用json名称
-func (a *validatorConfig) tagNameFunc(fld reflect.StructField) string {
+func (a *ValidatorConfig) tagNameFunc(fld reflect.StructField) string {
 	var name string
 	switch a.locale {
 	case "zh":
@@ -64,7 +64,7 @@ func (a *validatorConfig) tagNameFunc(fld reflect.StructField) string {
 }
 
 // translator
-func (a *validatorConfig) getTranslator() ut.Translator {
+func (a *ValidatorConfig) getTranslator() ut.Translator {
 	// 第一个参数是备用（fallback）的语言环境
 	// 后面的参数是应该支持的语言环境（支持多个）
 	// uni := ut.New(zhl, zhl) 也是可以的
@@ -82,7 +82,7 @@ func (a *validatorConfig) getTranslator() ut.Translator {
 }
 
 // registerTrans
-func (a *validatorConfig) registerTrans(v *validator.Validate, trans ut.Translator) error {
+func (a *ValidatorConfig) registerTrans(v *validator.Validate, trans ut.Translator) error {
 	var err error
 	switch a.locale {
 	case "en":

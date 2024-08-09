@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/wonli/aqi/config"
+	"github.com/wonli/aqi/internal/config"
 )
 
 var ZapLog *zap.Logger

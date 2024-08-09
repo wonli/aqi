@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"errors"
 	"fmt"
 
 	ut "github.com/go-playground/universal-translator"
@@ -47,7 +48,8 @@ func (g *Manager) RegisterValidatorFunc(tag string,
 
 // Translator 语言翻译
 func (g *Manager) Translator(e error) error {
-	errs, ok := e.(validator.ValidationErrors)
+	var errs validator.ValidationErrors
+	ok := errors.As(e, &errs)
 	if !ok {
 		return e
 	}

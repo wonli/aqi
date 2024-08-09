@@ -6,7 +6,7 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/wonli/aqi/config"
+	"github.com/wonli/aqi/internal/config"
 )
 
 func (a *AppConfig) GetDataPath(dir string) string {

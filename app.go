@@ -12,7 +12,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 
-	"github.com/wonli/aqi/config"
+	"github.com/wonli/aqi/internal/config"
 	"github.com/wonli/aqi/logger"
 	"github.com/wonli/aqi/validate"
 )
