@@ -109,7 +109,7 @@ func (c *Client) Write() {
 
 			c.Log("->", string(msg))
 		case <-timer.C:
-			err := wsutil.WriteServerMessage(c.Conn, ws.OpPing, nil)
+			err := wsutil.WriteServerMessage(c.Conn, ws.OpPing, []byte("ping"))
 			if err != nil {
 				c.Log("xx", "Error actively pinging the client", err.Error())
 				return

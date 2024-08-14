@@ -6,7 +6,7 @@ import (
 )
 
 func Bites(size float64) string {
-	unit := []string{"b", "kb", "mb", "gb", "tb", "pb"}
+	unit := []string{"B", "KB", "MB", "GB", "TB", "PB"}
 	s := math.Floor(math.Log(size) / math.Log(1024))
 	i := int(s)
 
