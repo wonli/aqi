@@ -2,12 +2,13 @@ package ws
 
 import (
 	"fmt"
+	"github.com/gobwas/ws"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 
 	"github.com/wonli/aqi/logger"
@@ -19,6 +20,7 @@ type Client struct {
 	Send           chan []byte `json:"-"`
 	Endpoint       string      `json:"-"` //入口地址
 	OnceId         string      `json:"-"` //临时ID，扫码登录等场景作为客户端唯一标识
+	ClientId       string      `json:"-"` //客户端ID
 	Disconnecting  bool        `json:"-"` //已被设置为断开状态（消息发送完之后断开连接）
 	SyncMsg        bool        `json:"-"` //是否接收消息
 	LastMsgId      int         `json:"-"` //最后一条消息ID
@@ -29,6 +31,9 @@ type Client struct {
 	AuthCode       string      `json:"-"` //用于校验JWT中的code，如果相等识别为同一个用户的网络地址变更
 	ErrorCount     int         `json:"-"` //错误次数
 	Closed         bool        `json:"-"` //是否已经关闭
+
+	HttpRequest *http.Request       `json:"-"`
+	HttpWriter  http.ResponseWriter `json:"-"`
 
 	User              *User     `json:"user,omitempty"` //关联用户
 	Scope             string    `json:"scope"`          //登录jwt scope, 用于判断用户从哪里登录的

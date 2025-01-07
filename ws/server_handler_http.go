@@ -3,42 +3,14 @@ package ws
 import (
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gobwas/ws"
 	"go.uber.org/zap"
 
 	"github.com/wonli/aqi/logger"
+	"github.com/wonli/aqi/utils/ip"
 )
-
-func getRealIP(r *http.Request) string {
-	// Check if behind a proxy
-	xForwardedFor := r.Header.Get("X-Forwarded-For")
-	if xForwardedFor != "" {
-		// This header can contain multiple IPs separated by comma
-		// The first one is the original IP
-		parts := strings.Split(xForwardedFor, ",")
-		for i, p := range parts {
-			parts[i] = strings.TrimSpace(p)
-		}
-		return parts[0] // Return the first IP which is the client's real IP
-	}
-
-	// If the X-Real-IP header is set, then use it
-	xRealIP := r.Header.Get("X-Real-IP")
-	if xRealIP != "" {
-		return xRealIP
-	}
-
-	// Fallback to using RemoteAddr
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr // In case there was an issue parsing, just return the whole thing
-	}
-
-	return ip
-}
 
 func HttpHandler(w http.ResponseWriter, r *http.Request) {
 	u := ws.HTTPUpgrader{
@@ -69,10 +41,11 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 		Hub:            Hub,
 		Conn:           conn,
 		Send:           make(chan []byte, 32),
-		IpAddress:      getRealIP(r),
+		IpAddress:      ip.GetIPAddress(r),
 		IpConnAddr:     addr.String(),
 		ConnectionTime: time.Now(),
-		Endpoint:       r.RequestURI,
+		HttpRequest:    r,
+		HttpWriter:     w,
 	}
 
 	c.Hub.Connection <- c
