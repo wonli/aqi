@@ -1,13 +1,43 @@
 package ws
 
-import "time"
+import (
+	"reflect"
+	"time"
+)
 
 type Value struct {
 	data any
 }
 
+func (v *Value) By(t any) {
+	if v.data == nil {
+		return
+	}
+
+	tValue := reflect.ValueOf(t)
+	if tValue.Kind() != reflect.Ptr || tValue.IsNil() {
+		return
+	}
+
+	elem := tValue.Elem()
+	dataValue := reflect.ValueOf(v.data)
+	if elem.Kind() != dataValue.Kind() {
+		return
+	}
+
+	elem.Set(dataValue)
+}
+
 func (v *Value) Raw() any {
 	return v.data
+}
+
+func (v *Value) IsNil() bool {
+	if v.data == nil {
+		return true
+	}
+
+	return false
 }
 
 func (v *Value) String() string {
