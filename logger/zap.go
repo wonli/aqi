@@ -1,15 +1,16 @@
 package logger
 
 import (
-	"os"
-	"path/filepath"
-
+	"fmt"
 	"github.com/fatih/color"
+	"github.com/wonli/aqi/internal/config"
 	"go.uber.org/zap"
+	"go.uber.org/zap/buffer"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
-
-	"github.com/wonli/aqi/internal/config"
+	"os"
+	"path/filepath"
+	"regexp"
 )
 
 var ZapLog *zap.Logger
@@ -48,12 +49,128 @@ func Init(c config.Logger) {
 		Compress:   c.Compress,
 	}
 
-	stdLog := zapcore.NewCore(c.GetEncoder(""), zapcore.AddSync(os.Stdout), zap.DebugLevel)
-	fileLog := zapcore.NewCore(c.GetEncoder("file"), zapcore.AddSync(&hook), zap.DebugLevel)
+	stdEncoder := newLimitLengthEncoder(c.GetEncoder(""), 300)
+	stdLog := zapcore.NewCore(stdEncoder, zapcore.AddSync(os.Stdout), zap.InfoLevel)
+
+	fileEncoder := getFileStyleEncoder()
+	fileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&hook), zap.DebugLevel)
 
 	//ZapLog
 	ZapLog = zap.New(zapcore.NewTee(stdLog, fileLog), zap.AddCaller(), zap.Development())
 
 	//sugar
 	SugarLog = ZapLog.Sugar()
+
+	defer SugarLog.Sync()
+}
+
+// 创建一个自定义的 encoder 来限制消息长度
+type limitLengthEncoder struct {
+	zapcore.Encoder
+	limit int
+}
+
+func (l *limitLengthEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
+	if len(entry.Message) > l.limit {
+		entry.Message = entry.Message[:l.limit] + "..."
+	}
+	return l.Encoder.EncodeEntry(entry, fields)
+}
+
+func newLimitLengthEncoder(encoder zapcore.Encoder, limit int) zapcore.Encoder {
+	return &limitLengthEncoder{
+		Encoder: encoder,
+		limit:   limit,
+	}
+}
+
+// getFileStyleEncoder 获取文件风格的日志编码器
+func getFileStyleEncoder() zapcore.Encoder {
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:        "", // 这些字段会在自定义格式中处理
+		LevelKey:       "",
+		NameKey:        "logger",
+		CallerKey:      "",
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeDuration: zapcore.StringDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+		EncodeName:     zapcore.FullNameEncoder,
+	}
+
+	return &fileStyleEncoder{
+		Encoder: zapcore.NewConsoleEncoder(encoderConfig),
+	}
+}
+
+// fileStyleEncoder 自定义编码风格输出
+type fileStyleEncoder struct {
+	zapcore.Encoder
+}
+
+func (e *fileStyleEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
+	// 正则表达式过滤base64的主体
+	filterRegex := regexp.MustCompile(`("data":"[^"]*base64,)([^"]*?)("[^"]*")`)
+	if filterRegex.MatchString(entry.Message) {
+		// 替换中间部分，保留前后部分
+		entry.Message = filterRegex.ReplaceAllString(entry.Message, `$1..(replace)..$3`)
+	}
+
+	// 创建输出缓冲区
+	buf := buffer.NewPool().Get()
+
+	// 标题分隔线
+	buf.AppendString("\n---------------------------------- START ----------------------------------\n")
+
+	// 时间和日志级别放到每一行前
+	logPrefix := entry.Time.Format("2006-01-02 15:04:05.000") + " "
+	switch entry.Level {
+	case zapcore.DebugLevel:
+		logPrefix += "[DEBUG] "
+	case zapcore.InfoLevel:
+		logPrefix += "[INFO ] "
+	case zapcore.WarnLevel:
+		logPrefix += "[WARN ] "
+	case zapcore.ErrorLevel:
+		logPrefix += "[ERROR] "
+	case zapcore.DPanicLevel:
+		logPrefix += "[PANIC] "
+	case zapcore.PanicLevel:
+		logPrefix += "[PANIC] "
+	case zapcore.FatalLevel:
+		logPrefix += "[FATAL] "
+	default:
+		logPrefix += "[UNK  ] "
+	}
+
+	// 调用者信息
+	if entry.Caller.Defined {
+		buf.AppendString(logPrefix)
+		buf.AppendString(entry.Caller.TrimmedPath())
+		buf.AppendString("\n")
+	}
+
+	// 消息内容：前面加上时间和级别
+	buf.AppendString(logPrefix)
+	buf.AppendString(entry.Message)
+
+	// 如果有额外的字段，附加到日志信息后
+	if len(fields) > 0 {
+		buf.AppendString("\n")
+		buf.AppendString(logPrefix)
+		for i, field := range fields {
+			if i > 0 {
+				buf.AppendString(", ")
+			}
+			buf.AppendString(field.Key)
+			buf.AppendString("=")
+			buf.AppendString(fmt.Sprint(field.Interface))
+		}
+	}
+
+	// 结束分隔线
+	buf.AppendString("\n----------------------------------  END  ----------------------------------\n")
+
+	return buf, nil
 }

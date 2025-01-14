@@ -132,16 +132,12 @@ func (c *Client) Write() {
 func (c *Client) Log(symbol string, msg ...string) {
 	s := strings.Join(msg, ", ")
 	if c.IsLogin {
-		s = fmt.Sprintf("%s %s [%s-%s] %s", c.Conn.RemoteAddr(), symbol, c.User.Suid, c.AppId, s)
+		s = fmt.Sprintf("%s %s [%s-%s] %s", c.IpAddress, symbol, c.User.Suid, c.AppId, s)
 	} else {
-		s = fmt.Sprintf("%s %s %s", c.Conn.RemoteAddr(), symbol, s)
+		s = fmt.Sprintf("%s %s %s", c.IpAddress, symbol, s)
 	}
 
-	if len(s) > 300 {
-		logger.SugarLog.Info(s[:300] + "...")
-	} else {
-		logger.SugarLog.Info(s)
-	}
+	logger.SugarLog.Info(s)
 }
 
 // SendMsg 把消息加入发送队列
