@@ -35,21 +35,26 @@ func (a *Azdg) Encrypt(sourceText string) string {
 func (a *Azdg) Decrypt(sourceText string) string {
 	buf, err := base64.RawURLEncoding.DecodeString(sourceText)
 	if err != nil {
-		fmt.Printf("Decode(%q) failed: %v", sourceText, err)
+		fmt.Printf("Decode (%q) failed: %v\n", sourceText, err)
 		return ""
 	}
 
 	inputData := []byte(a.cipherEncode(fmt.Sprintf("%s", buf)))
 	loopCount := len(inputData)
-	outData := make([]byte, loopCount)
 
-	var p int
-	for i, j := 0, 0; i < loopCount; i, j = i+2, j+1 {
-		p = p + 1
-		outData[j] = inputData[i] ^ inputData[i+1]
+	if loopCount%2 != 0 {
+		fmt.Printf("Decrypted data has unexpected length: %d\n", loopCount)
+		return ""
 	}
 
-	return fmt.Sprintf("%s", outData[:p])
+	outData := make([]byte, loopCount/2)
+	var p int
+	for i, j := 0, 0; i < loopCount; i, j = i+2, j+1 {
+		outData[j] = inputData[i] ^ inputData[i+1]
+		p++
+	}
+
+	return string(outData[:p])
 }
 
 func (a *Azdg) cipherEncode(sourceText string) string {
