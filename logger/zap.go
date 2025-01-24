@@ -111,10 +111,10 @@ type fileStyleEncoder struct {
 
 func (e *fileStyleEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
 	// 正则表达式过滤base64的主体
-	filterRegex := regexp.MustCompile(`("data":"[^"]*base64,)([^"]*?)("[^"]*")`)
+	filterRegex := regexp.MustCompile(`("data:[^"]*;base64,)([^"]*)`)
 	if filterRegex.MatchString(entry.Message) {
 		// 替换中间部分，保留前后部分
-		entry.Message = filterRegex.ReplaceAllString(entry.Message, `$1..(replace)..$3`)
+		entry.Message = filterRegex.ReplaceAllString(entry.Message, `$1..(replace)..`)
 	}
 
 	// 创建输出缓冲区
