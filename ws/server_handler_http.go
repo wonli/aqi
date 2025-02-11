@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -31,6 +32,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("Sec-Websocket-Protocol", h.Protocol)
 	}
 
+	ipAddr := ip.GetIPAddress(r)
 	addr, ok := conn.RemoteAddr().(*net.TCPAddr)
 	if !ok {
 		logger.SugarLog.Errorf("获取IP地址错误")
@@ -41,8 +43,8 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 		Hub:            Hub,
 		Conn:           conn,
 		Send:           make(chan []byte, 32),
-		IpAddress:      ip.GetIPAddress(r),
-		IpConnAddr:     addr.String(),
+		IpAddress:      ipAddr,
+		IpConnAddr:     fmt.Sprintf("%s:%d", ipAddr, addr.Port),
 		ConnectionTime: time.Now(),
 		HttpRequest:    r,
 		HttpWriter:     w,

@@ -26,7 +26,7 @@ func Dispatcher(c *Client, request string) {
 	}
 
 	//请求频率限制5毫秒
-	if t.Sub(c.LastRequestTime).Microseconds() <= 5 {
+	if t.Sub(c.LastRequestTime).Microseconds() <= 2 {
 		c.SendRawMsg(-13, "sys.requestLimit", "Your requests are too frequent", nil)
 		return
 	} else {
