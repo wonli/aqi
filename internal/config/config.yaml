@@ -3,7 +3,7 @@ devMode: true
 jwtSecurity: {{.JwtSecurity}}
 jwtLifetime: 30d
 log:
-  logFile: error.log
+  logFile: app.log
   logPath: logs
   maxSize: 200
   maxBackups: 3

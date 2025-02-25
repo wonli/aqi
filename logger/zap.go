@@ -11,9 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 var ZapLog *zap.Logger
+var RuntimeLog *zap.Logger
 var SugarLog *zap.SugaredLogger
 
 func Init(c config.Logger) {
@@ -22,7 +24,13 @@ func Init(c config.Logger) {
 	}
 
 	if c.LogFile == "" {
-		c.LogFile = "error.log"
+		c.LogFile = "app.log"
+	}
+
+	if c.RuntimeLogFile == "" {
+		ext := filepath.Ext(c.LogFile)
+		fileName := strings.TrimSuffix(c.LogFile, ext)
+		c.RuntimeLogFile = fileName + "_runtime" + ext
 	}
 
 	isAbsPath := filepath.IsAbs(c.LogPath)
@@ -49,19 +57,32 @@ func Init(c config.Logger) {
 		Compress:   c.Compress,
 	}
 
+	runtimeHook := lumberjack.Logger{
+		Filename:   filepath.Join(c.LogPath, c.RuntimeLogFile),
+		MaxSize:    c.MaxSize,
+		MaxBackups: c.MaxBackups,
+		MaxAge:     c.MaxAge,
+		Compress:   c.Compress,
+	}
+
 	stdEncoder := newLimitLengthEncoder(c.GetEncoder(""), 300)
 	stdLog := zapcore.NewCore(stdEncoder, zapcore.AddSync(os.Stdout), zap.InfoLevel)
 
 	fileEncoder := getFileStyleEncoder()
-	fileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&hook), zap.DebugLevel)
+	fileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&hook), zap.InfoLevel)
+	rFileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&runtimeHook), zap.InfoLevel)
 
-	//ZapLog
 	ZapLog = zap.New(zapcore.NewTee(stdLog, fileLog), zap.AddCaller(), zap.Development())
+	RuntimeLog = zap.New(zapcore.NewTee(rFileLog), zap.AddCaller(), zap.Development())
 
 	//sugar
 	SugarLog = ZapLog.Sugar()
 
-	defer SugarLog.Sync()
+	defer func() {
+		_ = ZapLog.Sync()
+		_ = SugarLog.Sync()
+		_ = RuntimeLog.Sync()
+	}()
 }
 
 // 创建一个自定义的 encoder 来限制消息长度
@@ -157,15 +178,23 @@ func (e *fileStyleEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Fie
 
 	// 如果有额外的字段，附加到日志信息后
 	if len(fields) > 0 {
-		buf.AppendString("\n")
-		buf.AppendString(logPrefix)
-		for i, field := range fields {
-			if i > 0 {
-				buf.AppendString(", ")
+		for _, field := range fields {
+			logStr := ""
+			if field.String != "" {
+				logStr = field.String
+			} else if field.Integer > 0 {
+				logStr = fmt.Sprintf("%d", field.Integer)
+			} else {
+				logStr = fmt.Sprintf("%v", field.Interface)
 			}
-			buf.AppendString(field.Key)
-			buf.AppendString("=")
-			buf.AppendString(fmt.Sprint(field.Interface))
+
+			if field.Key != "" {
+				logStr = fmt.Sprintf("%s(%s)", field.Key, logStr)
+			}
+
+			buf.AppendString("\n")
+			buf.AppendString(logPrefix)
+			buf.AppendString(logStr)
 		}
 	}
 

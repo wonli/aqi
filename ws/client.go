@@ -47,8 +47,8 @@ type Client struct {
 	LoginAction       string    `json:"loginAction"`    //登录动作
 	ForceDialogId     string    `json:"forceDialogId"`  //打开聊天界面的会话ID
 	IpAddress         string    `json:"ipAddress"`      //IP地址
+	IpAddressPort     string    `json:"IpAddressPort"`  //IP地址和端口
 	IpLocation        string    `json:"ipLocation"`     //通过IP转换获得的地理位置
-	IpConnAddr        string    `json:"IpConnAddr"`     //conn连接IP地址
 	ConnectionTime    time.Time `json:"connectionTime"`
 	LastRequestTime   time.Time `json:"lastRequestTime"`
 	LastHeartbeatTime time.Time `json:"lastHeartbeatTime"`
@@ -132,9 +132,9 @@ func (c *Client) Write() {
 func (c *Client) Log(symbol string, msg ...string) {
 	s := strings.Join(msg, ", ")
 	if c.IsLogin {
-		s = fmt.Sprintf("%s %s [%s-%s] %s", c.IpAddress, symbol, c.User.Suid, c.AppId, s)
+		s = fmt.Sprintf("%s %s [%s-%s] %s", c.IpAddressPort, symbol, c.User.Suid, c.AppId, s)
 	} else {
-		s = fmt.Sprintf("%s %s %s", c.IpAddress, symbol, s)
+		s = fmt.Sprintf("%s %s %s", c.IpAddressPort, symbol, s)
 	}
 
 	logger.SugarLog.Info(s)
@@ -145,7 +145,7 @@ func (c *Client) SendMsg(msg []byte) {
 	defer func() {
 		if err := recover(); err != nil {
 			c.Hub.Disconnect <- c
-			logger.SugarLog.Errorf("SendMsg recover error(%s): %s", c.IpConnAddr, err)
+			logger.SugarLog.Errorf("SendMsg recover error(%s): %s", c.IpAddressPort, err)
 		}
 	}()
 
@@ -184,6 +184,6 @@ func (c *Client) Close() {
 		_ = c.Conn.Close()
 
 		//打印日志
-		c.Log("xx", fmt.Sprintf("Close client -> %s", c.IpConnAddr))
+		c.Log("xx", fmt.Sprintf("Close client -> %s", c.IpAddressPort))
 	}
 }

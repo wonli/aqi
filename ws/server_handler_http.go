@@ -44,7 +44,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 		Conn:           conn,
 		Send:           make(chan []byte, 32),
 		IpAddress:      ipAddr,
-		IpConnAddr:     fmt.Sprintf("%s:%d", ipAddr, addr.Port),
+		IpAddressPort:  fmt.Sprintf("%s:%d", ipAddr, addr.Port),
 		ConnectionTime: time.Now(),
 		HttpRequest:    r,
 		HttpWriter:     w,

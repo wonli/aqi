@@ -58,6 +58,8 @@ func Dispatcher(c *Client, request string) {
 		defaultLng: "zh",
 	}
 
+	defer ctx.FlushLog()
+
 	ctx.handlers[0](ctx)
 	ctx.Next()
 }

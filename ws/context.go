@@ -14,6 +14,8 @@ type Context struct {
 	index    int8
 	handlers HandlersChain
 
+	logs []string
+
 	language   string
 	defaultLng string
 }

@@ -86,7 +86,12 @@ func GetIPAddress(r *http.Request) string {
 		}
 	}
 
-	return r.RemoteAddr
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+
+	return host
 }
 
 func GetIpAndPort(r *http.Request) (error, *HostAndPort) {
