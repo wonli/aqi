@@ -152,15 +152,8 @@ func (c *Client) SendMsg(msg []byte) {
 	c.Send <- msg
 }
 
-// SendRawMsg 构造消息再发送
-func (c *Client) SendRawMsg(code int, action, msg string, data any) {
-	a := &Action{
-		Action: action,
-		Code:   code,
-		Msg:    msg,
-		Data:   data,
-	}
-
+// SendActionMsg 构造消息再发送
+func (c *Client) SendActionMsg(a *Action) {
 	c.SendMsg(a.Encode())
 }
 

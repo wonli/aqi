@@ -1,18 +1,27 @@
 package ws
 
 import (
-	"time"
-
 	"github.com/tidwall/gjson"
+	"time"
 )
 
 func Dispatcher(c *Client, request string) {
-	t := time.Now()
+	var req struct {
+		Id     string `json:"id"`
+		Action string `json:"action"`
+		Params string `json:"params"`
+	}
+
+	result := gjson.Parse(request)
+	req.Id = result.Get("id").String()
+	req.Params = result.Get("params").String()
+	req.Action = result.Get("action").String()
+
 	//ping直接回应
-	action := gjson.Get(request, "action").String()
-	if action == "ping" {
+	t := time.Now()
+	if req.Action == "ping" {
 		c.LastHeartbeatTime = t
-		c.SendRawMsg(0, "ping", "pong", nil)
+		c.SendActionMsg(&Action{Action: "ping", Msg: "pong"})
 		return
 	}
 
@@ -20,14 +29,14 @@ func Dispatcher(c *Client, request string) {
 	if c.User != nil {
 		isBanned, bandTime := c.User.IsBanned()
 		if isBanned {
-			c.SendRawMsg(-11, "sys.ban", "You have been ban", bandTime)
+			c.SendActionMsg(&Action{Action: "sys.ban", Code: -1001, Data: bandTime})
 			return
 		}
 	}
 
 	//请求频率限制5毫秒
 	if t.Sub(c.LastRequestTime).Microseconds() <= 2 {
-		c.SendRawMsg(-13, "sys.requestLimit", "Your requests are too frequent", nil)
+		c.SendActionMsg(&Action{Action: "sys.requestLimit", Code: -1003, Msg: "requests are too frequent"})
 		return
 	} else {
 		//更新最后请求时间
@@ -40,16 +49,18 @@ func Dispatcher(c *Client, request string) {
 		}
 	}
 
-	handlers := InitManager().Handlers(action)
+	handlers := InitManager().Handlers(req.Action)
 	if handlers == nil || len(handlers) == 0 {
-		c.SendRawMsg(-15, action, "Request not supported", nil)
+		c.SendActionMsg(&Action{Action: req.Action, Code: -1005, Msg: "request not supported"})
 		return
 	}
 
 	ctx := &Context{
+		Id:     req.Id,
+		Params: req.Params,
+		Action: req.Action,
+
 		Client: c,
-		Action: action,
-		Params: gjson.Get(request, "params").String(),
 		Server: wss,
 
 		handlers: handlers,

@@ -6,6 +6,11 @@ func New(action string) *Action {
 	}
 }
 
+func (m *Action) WithId(id string) *Action {
+	m.Id = id
+	return m
+}
+
 func (m *Action) WithCode(code int) *Action {
 	m.Code = code
 	return m

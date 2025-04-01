@@ -10,9 +10,10 @@ import (
 
 // Action Websocket通讯协议
 type Action struct {
+	Code   int    `json:"code"`
 	Action string `json:"action"`
 
-	Code int    `json:"code"`
+	Id   string `json:"id,omitempty"`
 	Msg  string `json:"msg,omitempty"`
 	Data any    `json:"data,omitempty"`
 }

@@ -2,7 +2,7 @@ package ws
 
 // Send 发送数据给用户
 func (c *Context) Send(data any) {
-	msg := New(c.Action).WithData(data)
+	msg := New(c.Action).WithId(c.Id).WithData(data)
 
 	c.Response = msg
 	c.Client.SendMsg(msg.Encode())
@@ -10,7 +10,7 @@ func (c *Context) Send(data any) {
 
 // SendOk 发送成功消息
 func (c *Context) SendOk() {
-	msg := New(c.Action)
+	msg := New(c.Action).WithId(c.Id)
 
 	c.Response = msg
 	c.Client.SendMsg(msg.Encode())
@@ -30,7 +30,7 @@ func (c *Context) SendCode(code int, msg string) {
 		}
 	}
 
-	m := New(c.Action).WithCode(code).WithMsg(msg)
+	m := New(c.Action).WithId(c.Id).WithCode(code).WithMsg(msg)
 
 	c.Response = m
 	c.Client.SendMsg(m.Encode())
@@ -38,7 +38,7 @@ func (c *Context) SendCode(code int, msg string) {
 
 // SendMsg 发送消息给当前用户
 func (c *Context) SendMsg(msg string) {
-	m := New(c.Action).WithMsg(msg)
+	m := New(c.Action).WithId(c.Id).WithMsg(msg)
 
 	c.Response = m
 	c.Client.SendMsg(m.Encode())
@@ -46,7 +46,7 @@ func (c *Context) SendMsg(msg string) {
 
 // SendActionData 发送数据给当前用户
 func (c *Context) SendActionData(action string, data any) {
-	m := New(action).WithData(data)
+	m := New(action).WithId(c.Id).WithData(data)
 
 	c.Response = m
 	c.Client.SendMsg(m.Encode())
@@ -54,7 +54,7 @@ func (c *Context) SendActionData(action string, data any) {
 
 // SendActionMsg 发送消息给当前用户
 func (c *Context) SendActionMsg(action, msg string) {
-	m := New(action).WithMsg(msg)
+	m := New(action).WithId(c.Id).WithMsg(msg)
 
 	c.Response = m
 	c.Client.SendMsg(m.Encode())
@@ -62,7 +62,7 @@ func (c *Context) SendActionMsg(action, msg string) {
 
 // SendTo 发送给指定用户
 func (c *Context) SendTo(uid, action string, data any) {
-	m := New(action).WithData(data)
+	m := New(action).WithId(c.Id).WithData(data)
 	c.Response = m
 
 	user := c.Client.Hub.User(uid)

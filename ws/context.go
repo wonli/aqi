@@ -5,9 +5,11 @@ import (
 )
 
 type Context struct {
+	Id     string
+	Action string
+	Params string
+
 	Client   *Client
-	Action   string
-	Params   string
 	Response *Action
 	Server   *Server
 
