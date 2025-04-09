@@ -2,6 +2,7 @@ package ws
 
 import (
 	"fmt"
+	"golang.org/x/time/rate"
 	"net"
 	"net/http"
 	"time"
@@ -43,6 +44,8 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 		Hub:            Hub,
 		Conn:           conn,
 		Send:           make(chan []byte, 32),
+		RequestQueue:   make(chan string, 128),
+		Limiter:        rate.NewLimiter(50, 100),
 		IpAddress:      ipAddr,
 		IpAddressPort:  fmt.Sprintf("%s:%d", ipAddr, addr.Port),
 		ConnectionTime: time.Now(),
@@ -54,4 +57,5 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 	go c.Reader()
 	go c.Write()
 
+	go c.Request()
 }

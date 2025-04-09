@@ -34,19 +34,13 @@ func Dispatcher(c *Client, request string) {
 		}
 	}
 
-	//请求频率限制5毫秒
-	if t.Sub(c.LastRequestTime).Microseconds() <= 2 {
-		c.SendActionMsg(&Action{Action: "sys.requestLimit", Code: -1003, Msg: "requests are too frequent"})
-		return
-	} else {
-		//更新最后请求时间
-		c.LastRequestTime = t
+	//更新最后请求时间
+	c.LastRequestTime = t
 
-		//如果心跳时间为0，设置为当前时间
-		//防止在连接瞬间被哨兵扫描而断开
-		if c.LastHeartbeatTime.IsZero() {
-			c.LastHeartbeatTime = t
-		}
+	//如果心跳时间为0，设置为当前时间
+	//防止在连接瞬间被哨兵扫描而断开
+	if c.LastHeartbeatTime.IsZero() {
+		c.LastHeartbeatTime = t
 	}
 
 	handlers := InitManager().Handlers(req.Action)
