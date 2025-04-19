@@ -44,6 +44,14 @@ func (c *Context) SendMsg(msg string) {
 	c.Client.SendMsg(m.Encode())
 }
 
+// SendAction 发送Action
+func (c *Context) SendAction(action *Action) {
+	m := action.WithId(c.Id)
+
+	c.Response = m
+	c.Client.SendMsg(m.Encode())
+}
+
 // SendActionData 发送数据给当前用户
 func (c *Context) SendActionData(action string, data any) {
 	m := New(action).WithId(c.Id).WithData(data)

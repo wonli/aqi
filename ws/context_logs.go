@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-func (c *Context) AddLog(log string) {
-	c.logs = append(c.logs, log)
+func (c *Context) AddLog(log string, args ...any) {
+	c.logs = append(c.logs, fmt.Sprintf(log, args...))
 }
 
 func (c *Context) FlushLog() {
