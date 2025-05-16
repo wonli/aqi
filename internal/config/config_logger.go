@@ -10,12 +10,13 @@ type Logger struct {
 	LogFile        string
 	RuntimeLogFile string
 
-	LogPath    string `yaml:"logPath"`    // Path of the log file
-	MaxSize    int    `yaml:"maxSize"`    // Maximum log file size in MB
-	MaxBackups int    `yaml:"maxBackups"` // Maximum number of log file backups
-	MaxAge     int    `yaml:"maxAge"`     // Maximum number of days to retain log files
-	Compress   bool   `yaml:"compress"`   // Whether to enable gzip compression
-	UseCaller  bool   `yaml:"useCaller"`  // Whether to enable Zap Caller
+	LogPath    string            `yaml:"logPath"`    // Path of the log file
+	LogFilter  map[string]string `yaml:"logFilter"`  // Filter
+	MaxSize    int               `yaml:"maxSize"`    // Maximum log file size in MB
+	MaxBackups int               `yaml:"maxBackups"` // Maximum number of log file backups
+	MaxAge     int               `yaml:"maxAge"`     // Maximum number of days to retain log files
+	Compress   bool              `yaml:"compress"`   // Whether to enable gzip compression
+	UseCaller  bool              `yaml:"useCaller"`  // Whether to enable Zap Caller
 }
 
 // GetEncoder 根据模式获取编码器

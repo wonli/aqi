@@ -2,16 +2,19 @@ package logger
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/fatih/color"
 	"github.com/wonli/aqi/internal/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/buffer"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 )
 
 var ZapLog *zap.Logger
@@ -68,7 +71,7 @@ func Init(c config.Logger) {
 	stdEncoder := newLimitLengthEncoder(c.GetEncoder(""), 300)
 	stdLog := zapcore.NewCore(stdEncoder, zapcore.AddSync(os.Stdout), zap.InfoLevel)
 
-	fileEncoder := getFileStyleEncoder()
+	fileEncoder := getFileStyleEncoder(c)
 	fileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&hook), zap.InfoLevel)
 	rFileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&runtimeHook), zap.InfoLevel)
 
@@ -106,7 +109,7 @@ func newLimitLengthEncoder(encoder zapcore.Encoder, limit int) zapcore.Encoder {
 }
 
 // getFileStyleEncoder 获取文件风格的日志编码器
-func getFileStyleEncoder() zapcore.Encoder {
+func getFileStyleEncoder(c config.Logger) zapcore.Encoder {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "", // 这些字段会在自定义格式中处理
 		LevelKey:       "",
@@ -120,22 +123,69 @@ func getFileStyleEncoder() zapcore.Encoder {
 		EncodeName:     zapcore.FullNameEncoder,
 	}
 
-	return &fileStyleEncoder{
-		Encoder: zapcore.NewConsoleEncoder(encoderConfig),
+	filters := make([]FilterRule, 0, len(c.LogFilter))
+	if c.LogFilter != nil {
+		for actionPattern, fieldRule := range c.LogFilter {
+			// 解析字段路径和长度（格式：field.path:maxLen）
+			ruleParts := strings.SplitN(fieldRule, ":", 2)
+			if len(ruleParts) != 2 {
+				continue
+			}
+
+			fieldPath := strings.TrimSpace(ruleParts[0])
+			maxLen, _ := strconv.Atoi(strings.TrimSpace(ruleParts[1]))
+			if maxLen <= 0 {
+				continue
+			}
+
+			patternStr := fmt.Sprintf(`"action"\s*:\s*"%s"`, regexp.QuoteMeta(actionPattern))
+			pattern := regexp.MustCompile(patternStr)
+
+			fieldPattern := fmt.Sprintf(`("%s":\s*)(.*)`, regexp.QuoteMeta(fieldPath))
+			fieldRegex := regexp.MustCompile(fieldPattern)
+
+			filters = append(filters, FilterRule{
+				Action:     actionPattern,
+				Field:      fieldPath,
+				MaxLen:     maxLen,
+				Pattern:    pattern,
+				FieldRegex: fieldRegex,
+			})
+		}
 	}
+
+	return &fileStyleEncoder{
+		Encoder:      zapcore.NewConsoleEncoder(encoderConfig),
+		base64Filter: regexp.MustCompile(`("data:[^"]*;base64,)([^"]*)`),
+		logFilters:   filters,
+	}
+}
+
+type FilterRule struct {
+	Action     string
+	Field      string
+	MaxLen     int
+	Pattern    *regexp.Regexp // 匹配action的正则
+	FieldRegex *regexp.Regexp // 匹配字段的正则
 }
 
 // fileStyleEncoder 自定义编码风格输出
 type fileStyleEncoder struct {
 	zapcore.Encoder
+
+	base64Filter *regexp.Regexp
+	logFilters   []FilterRule
 }
 
 func (e *fileStyleEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
+	// 处理自定义过滤规则
+	if e.logFilters != nil {
+		entry.Message = e.processMessage(entry.Message, e.logFilters)
+	}
+
 	// 正则表达式过滤base64的主体
-	filterRegex := regexp.MustCompile(`("data:[^"]*;base64,)([^"]*)`)
-	if filterRegex.MatchString(entry.Message) {
-		// 替换中间部分，保留前后部分
-		entry.Message = filterRegex.ReplaceAllString(entry.Message, `$1..(replace)..`)
+	if e.base64Filter.MatchString(entry.Message) {
+		entry.Message = e.base64Filter.ReplaceAllString(entry.Message, `$1..(replace)..`)
 	}
 
 	// 创建输出缓冲区
@@ -202,4 +252,29 @@ func (e *fileStyleEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Fie
 	buf.AppendString("\n----------------------------------  END  ----------------------------------\n")
 
 	return buf, nil
+}
+
+func (e *fileStyleEncoder) processMessage(msg string, filters []FilterRule) string {
+	for _, rule := range filters {
+		if strings.Contains(msg, rule.Action) && rule.Pattern.MatchString(msg) {
+			msg = rule.FieldRegex.ReplaceAllStringFunc(msg, func(match string) string {
+				parts := rule.FieldRegex.FindStringSubmatch(match)
+				if len(parts) >= 3 {
+					value := parts[2]
+					if len(value) > rule.MaxLen {
+						prefix := parts[1]
+						// 确保不会从中文字符中间截断
+						safeIndex := rule.MaxLen
+						for safeIndex > 0 && !utf8.RuneStart(value[safeIndex]) {
+							safeIndex--
+						}
+						return prefix + value[:safeIndex] + "..."
+					}
+					return match
+				}
+				return match
+			})
+		}
+	}
+	return msg
 }

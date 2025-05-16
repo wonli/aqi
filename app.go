@@ -181,7 +181,7 @@ func Init(options ...Option) *AppConfig {
 	var c config.Logger
 	err = viper.UnmarshalKey(acf.LogPathKey, &c)
 	if err != nil {
-		color.Red("failed to init app log")
+		color.Red("failed to init app log: " + err.Error())
 		os.Exit(1)
 	}
 
