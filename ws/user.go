@@ -94,6 +94,7 @@ func (u *User) appLogin(appId string, client *Client) error {
 		u.AppClients = append(u.AppClients, client)
 	}
 
+	u.Hub.PubSub.Pub("login", u)
 	return nil
 }
 
@@ -115,6 +116,7 @@ func (u *User) appLogout(appId string, logoutClient *Client) error {
 		logoutClient.Close()
 	}
 
+	u.Hub.PubSub.Pub("logout", u)
 	return nil
 }
 

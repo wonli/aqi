@@ -2,6 +2,7 @@ package aqi
 
 import (
 	"fmt"
+
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/wonli/aqi/internal/config"
 	"github.com/wonli/aqi/logger"
 	"github.com/wonli/aqi/validate"
+	"github.com/wonli/aqi/ws"
 )
 
 type AppConfig struct {
@@ -106,7 +108,7 @@ func Init(options ...Option) *AppConfig {
 				os.Exit(1)
 			}
 
-			color.Red("failed to read config file: %s", err.Error())
+			color.Red("failed to read config file")
 			os.Exit(1)
 		}
 
@@ -205,5 +207,8 @@ func Init(options ...Option) *AppConfig {
 
 	//监听配置
 	viper.WatchConfig()
+
+	//初始化hub
+	ws.InitManager()
 	return acf
 }

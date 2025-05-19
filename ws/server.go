@@ -25,7 +25,6 @@ func NewServer(engine http.Handler) *Server {
 		InitManager()
 		wss = &Server{
 			engine: engine,
-			port:   ":3322",
 			fn:     HttpHandler,
 		}
 	})
