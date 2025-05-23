@@ -1,0 +1,84 @@
+package cmd
+
+import (
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+	"github.com/wonli/aqi"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+	"gorm.io/gen"
+	"gorm.io/gorm"
+	"strings"
+
+	"{{.PackageName}}/internal/dbc"
+)
+
+func init() {
+	rootCmd.AddCommand(dalCmd)
+}
+
+var dalCmd = &cobra.Command{
+	Use:   "dal",
+	Short: "生成数据库表对应的model和dal",
+	Run: func(cmd *cobra.Command, args []string) {
+
+		aqi.Init(
+			aqi.ConfigFile(configFile),
+		)
+
+		dbc.InitDBC()
+
+		g := gen.NewGenerator(gen.Config{
+            OutPath:           "./internal/entity/dal",
+            Mode:              gen.WithoutContext | gen.WithDefaultQuery | gen.WithQueryInterface,
+            FieldSignable:     true, // 无符号整数类型字段
+            FieldNullable:     true, // 数据库中的字段可为空，则生成struct字段为指针类型
+            FieldCoverable:    true, // 如果数据库中字段有默认值，则生成指针类型的字段，以避免零值（zero-value）问题
+            FieldWithIndexTag: true, // 为结构体生成gorm index tag
+            FieldWithTypeTag:  true, // 为结构体生成gorm type tag
+        })
+
+		g.WithDataTypeMap(map[string]func(columnType gorm.ColumnType) string{
+			"json": func(columnType gorm.ColumnType) string {
+				return "datatypes.JSON"
+			},
+		})
+
+		prefixToRemove := viper.GetString("mysql.logic.prefix")
+		g.WithTableNameStrategy(func(tableName string) string {
+			// 去掉指定的前缀
+			if strings.HasPrefix(tableName, prefixToRemove) {
+				return strings.TrimPrefix(tableName, prefixToRemove)
+			}
+			return tableName
+		})
+
+		g.WithJSONTagNameStrategy(func(columnName string) string {
+			parts := strings.Split(columnName, "_")
+			titleTransformer := cases.Title(language.English)
+
+			for i := range parts {
+				parts[i] = titleTransformer.String(parts[i])
+			}
+
+			// 将首字母转换为小写
+			if len(parts) > 0 {
+				parts[0] = strings.ToLower(parts[0][:1]) + parts[0][1:]
+			}
+
+			return strings.Join(parts, "")
+		})
+
+		logic := dbc.LogicDB.Use()
+		g.UseDB(logic)
+		g.ApplyInterface(func(Filter) {}, g.GenerateAllTable()...)
+
+		g.Execute()
+	},
+}
+
+type Filter interface {
+	// FilterWithColumn
+	// SELECT * FROM @@table WHERE @@column=@value
+	FilterWithColumn(column string, value string) ([]*gen.T, error)
+}

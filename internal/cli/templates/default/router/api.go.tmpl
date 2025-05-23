@@ -1,0 +1,22 @@
+package router
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/wonli/aqi/ws"
+	"time"
+
+	"{{.PackageName}}/internal/middlewares"
+)
+
+func Api(g *gin.Engine) {
+	g.Use(middlewares.GinCORS())
+	g.GET("/ok", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"t": time.Now().Unix(),
+		})
+	})
+
+	g.GET("/ws", func(c *gin.Context) {
+		ws.HttpHandler(c.Writer, c.Request)
+	})
+}

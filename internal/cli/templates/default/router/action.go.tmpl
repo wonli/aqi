@@ -1,0 +1,15 @@
+package router
+
+import (
+	"github.com/wonli/aqi"
+	"github.com/wonli/aqi/ws"
+
+	"{{.PackageName}}/internal/middlewares"
+)
+
+func Actions(e *aqi.AppConfig) {
+	app := ws.NewRouter().Use(middlewares.Recovery(), middlewares.App())
+	app.Add("hi", func(a *ws.Context) {
+		a.Send(a.Params)
+	})
+}
