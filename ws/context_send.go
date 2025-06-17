@@ -45,16 +45,14 @@ func (c *Context) SendMsg(msg string) {
 }
 
 // SendAction 发送Action
-func (c *Context) SendAction(action *Action) {
-	m := action.WithId(c.Id)
-
+func (c *Context) SendAction(m *Action) {
 	c.Response = m
 	c.Client.SendMsg(m.Encode())
 }
 
 // SendActionData 发送数据给当前用户
 func (c *Context) SendActionData(action string, data any) {
-	m := New(action).WithId(c.Id).WithData(data)
+	m := New(action).WithData(data)
 
 	c.Response = m
 	c.Client.SendMsg(m.Encode())
@@ -62,7 +60,7 @@ func (c *Context) SendActionData(action string, data any) {
 
 // SendActionMsg 发送消息给当前用户
 func (c *Context) SendActionMsg(action, msg string) {
-	m := New(action).WithId(c.Id).WithMsg(msg)
+	m := New(action).WithMsg(msg)
 
 	c.Response = m
 	c.Client.SendMsg(m.Encode())
@@ -70,9 +68,9 @@ func (c *Context) SendActionMsg(action, msg string) {
 
 // SendTo 发送给指定用户
 func (c *Context) SendTo(uid, action string, data any) {
-	m := New(action).WithId(c.Id).WithData(data)
-	c.Response = m
+	m := New(action).WithData(data)
 
+	c.Response = m
 	user := c.Client.Hub.User(uid)
 	if user != nil {
 		user.SendMsg(m.Encode())

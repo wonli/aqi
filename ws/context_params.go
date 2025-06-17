@@ -46,15 +46,14 @@ func (c *Context) GetPagination() *Pagination {
 	return InitPagination(p, 100)
 }
 
-func (c *Context) GetSizePagination(pageSize int) *Pagination {
+func (c *Context) GetMaxPagination(max int) *Pagination {
 	p := &Page{}
 	page := gjson.Get(c.Params, "page").String()
 	if page != "" {
 		_ = json.Unmarshal([]byte(page), &p)
 	}
 
-	p.PageSize = pageSize
-	return InitPagination(p, 0)
+	return InitPagination(p, max)
 }
 
 func (c *Context) GetMinInt(key string, min int) int {
