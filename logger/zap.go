@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/fatih/color"
 	"github.com/wonli/aqi/internal/config"
@@ -141,15 +140,11 @@ func getFileStyleEncoder(c config.Logger) zapcore.Encoder {
 			patternStr := fmt.Sprintf(`"action"\s*:\s*"%s"`, regexp.QuoteMeta(actionPattern))
 			pattern := regexp.MustCompile(patternStr)
 
-			fieldPattern := fmt.Sprintf(`("%s":\s*)(.*)`, regexp.QuoteMeta(fieldPath))
-			fieldRegex := regexp.MustCompile(fieldPattern)
-
 			filters = append(filters, FilterRule{
-				Action:     actionPattern,
-				Field:      fieldPath,
-				MaxLen:     maxLen,
-				Pattern:    pattern,
-				FieldRegex: fieldRegex,
+				Action:  actionPattern,
+				Field:   fieldPath,
+				MaxLen:  maxLen,
+				Pattern: pattern,
 			})
 		}
 	}
@@ -162,11 +157,10 @@ func getFileStyleEncoder(c config.Logger) zapcore.Encoder {
 }
 
 type FilterRule struct {
-	Action     string
-	Field      string
-	MaxLen     int
-	Pattern    *regexp.Regexp // 匹配action的正则
-	FieldRegex *regexp.Regexp // 匹配字段的正则
+	Action  string
+	Field   string
+	MaxLen  int
+	Pattern *regexp.Regexp // 匹配action的正则
 }
 
 // fileStyleEncoder 自定义编码风格输出
@@ -257,23 +251,19 @@ func (e *fileStyleEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Fie
 func (e *fileStyleEncoder) processMessage(msg string, filters []FilterRule) string {
 	for _, rule := range filters {
 		if strings.Contains(msg, rule.Action) && rule.Pattern.MatchString(msg) {
-			msg = rule.FieldRegex.ReplaceAllStringFunc(msg, func(match string) string {
-				parts := rule.FieldRegex.FindStringSubmatch(match)
-				if len(parts) >= 3 {
-					value := parts[2]
-					if len(value) > rule.MaxLen {
-						prefix := parts[1]
-						// 确保不会从中文字符中间截断
-						safeIndex := rule.MaxLen
-						for safeIndex > 0 && !utf8.RuneStart(value[safeIndex]) {
-							safeIndex--
-						}
-						return prefix + value[:safeIndex] + "..."
+			// 查找字段位置
+			fieldKey := fmt.Sprintf(`"%s":`, rule.Field)
+			pos := strings.Index(msg, fieldKey)
+			if pos != -1 {
+				startPos := pos + len(fieldKey)
+				if len(msg[startPos:]) > rule.MaxLen {
+					r := []rune(msg[startPos:])
+					if rule.MaxLen < len(r) {
+						truncated := string(r[:rule.MaxLen]) + "..."
+						msg = msg[:startPos] + truncated
 					}
-					return match
 				}
-				return match
-			})
+			}
 		}
 	}
 	return msg
