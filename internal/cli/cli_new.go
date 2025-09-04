@@ -119,8 +119,18 @@ func createProject(name, packageName string) {
 	fmt.Printf("Successfully created project: %s\n", name)
 }
 
-// runGoModTidy 在指定目录执行 go mod tidy
+// runGoModTidy 在指定目录先更新依赖然后执行 go mod tidy
 func runGoModTidy(projectDir string) error {
+	// 先执行 go get -u github.com/wonli/aqi@latest 更新到最新版本
+	getCmd := exec.Command("go", "get", "-u", "github.com/wonli/aqi@latest")
+	getCmd.Dir = projectDir
+	getCmd.Stdout = os.Stdout
+	getCmd.Stderr = os.Stderr
+	if err := getCmd.Run(); err != nil {
+		fmt.Printf("Warning: Failed to update aqi dependency: %v\n", err)
+	}
+
+	// 然后执行 go mod tidy
 	cmd := exec.Command("go", "mod", "tidy")
 	cmd.Dir = projectDir
 	cmd.Stdout = os.Stdout
