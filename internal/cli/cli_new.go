@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -110,5 +111,19 @@ func createProject(name, packageName string) {
 		_ = outputFile.Close()
 	}
 
+	// 执行 go mod tidy 整理依赖
+	if err := runGoModTidy(name); err != nil {
+		fmt.Printf("Warning: Failed to run go mod tidy: %v\n", err)
+	}
+
 	fmt.Printf("Successfully created project: %s\n", name)
+}
+
+// runGoModTidy 在指定目录执行 go mod tidy
+func runGoModTidy(projectDir string) error {
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = projectDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
