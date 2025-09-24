@@ -52,10 +52,11 @@ func (h *Hubc) Run() {
 			c.Log("--", "connection")
 
 		case c := <-h.Disconnect:
+			h.PubSub.Pub("disconnect", c)
 			if c.User != nil {
 				err := c.User.appLogout(c.AppId, c)
 				if err != nil {
-					c.Log("--", "user disconnect")
+					c.Log("--", "user disconnect err:"+err.Error())
 				}
 			} else {
 				c.Close()
