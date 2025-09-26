@@ -23,13 +23,6 @@ func DataPath(path string) Option {
 	}
 }
 
-func devMode(isDev bool) Option {
-	return func(config *AppConfig) error {
-		config.devMode = isDev
-		return nil
-	}
-}
-
 func ConfigFile(file string) Option {
 	if !filepath.IsAbs(file) {
 		workerDir, err := os.Getwd()

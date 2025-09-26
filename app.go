@@ -86,7 +86,9 @@ func Init(options ...Option) *AppConfig {
 
 	if CommitVersion == "" {
 		acf.devMode = true
-		acf.ConfigName = fmt.Sprintf("%s-dev", acf.ConfigName)
+		if !strings.Contains(acf.ConfigName, "-dev") {
+			acf.ConfigName = fmt.Sprintf("%s-dev", acf.ConfigName)
+		}
 	}
 
 	// 设置环境变量的前缀
@@ -133,7 +135,7 @@ func Init(options ...Option) *AppConfig {
 		_ = viper.AddRemoteProvider(string(acf.RemoteProvider.Name), acf.RemoteProvider.Endpoint, acf.RemoteProvider.Path)
 		viper.SetConfigType(acf.RemoteProvider.Type)
 
-		err := viper.ReadRemoteConfig()
+		err = viper.ReadRemoteConfig()
 		if err != nil {
 			color.Red("Failed to read remote config")
 			os.Exit(1)
@@ -176,9 +178,7 @@ func Init(options ...Option) *AppConfig {
 		AsciiLogo(acf.Servername...)
 	}
 
-	if CommitVersion == "" {
-		color.Green("dev mode -- use config %s", acf.ConfigName+"."+acf.ConfigType)
-	}
+	color.Green("AQI -- use config %s", acf.ConfigName+"."+acf.ConfigType)
 
 	var c config.Logger
 	err = viper.UnmarshalKey(acf.LogPathKey, &c)
