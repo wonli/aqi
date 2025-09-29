@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/wonli/aqi/ws"
 )
 
 type Option func(config *AppConfig) error
@@ -72,6 +74,13 @@ func HttpServer(name, portFindPath string) Option {
 func WatchHandler(handler func()) Option {
 	return func(config *AppConfig) error {
 		config.WatchHandler = handler
+		return nil
+	}
+}
+
+func Guard(fn ws.GuardFunc) Option {
+	return func(config *AppConfig) error {
+		config.Guard = fn
 		return nil
 	}
 }

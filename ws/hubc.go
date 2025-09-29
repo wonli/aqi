@@ -28,6 +28,16 @@ type Hubc struct {
 	Disconnect chan *Client
 }
 
+type GuardFunc func(h *Hubc)
+
+// GuardFunc 守护回调
+var guardFn GuardFunc
+
+// SetGuardFunc 设置全局的 Hubc 守护回调
+func SetGuardFunc(fn GuardFunc) {
+	guardFn = fn
+}
+
 func NewHubc() *Hubc {
 	Hub = &Hubc{
 		PubSub:     NewPubSub(),
@@ -70,6 +80,10 @@ func (h *Hubc) guard() {
 	cleanupTTL := 5 * time.Minute
 	timer := time.NewTicker(30 * time.Second)
 	for range timer.C {
+		if guardFn != nil {
+			guardFn(h)
+		}
+
 		userCount := 0
 		guestCount := len(h.Guests)
 		h.Users.Range(func(key, value any) bool {
