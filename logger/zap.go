@@ -137,7 +137,7 @@ func getFileStyleEncoder(c config.Logger) zapcore.Encoder {
 				continue
 			}
 
-			patternStr := fmt.Sprintf(`"action"\s*:\s*"%s"`, regexp.QuoteMeta(actionPattern))
+			patternStr := fmt.Sprintf(`(?i)"action":"%s"`, regexp.QuoteMeta(actionPattern))
 			pattern := regexp.MustCompile(patternStr)
 
 			filters = append(filters, FilterRule{
@@ -250,7 +250,7 @@ func (e *fileStyleEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Fie
 
 func (e *fileStyleEncoder) processMessage(msg string, filters []FilterRule) string {
 	for _, rule := range filters {
-		if strings.Contains(msg, rule.Action) && rule.Pattern.MatchString(msg) {
+		if rule.Pattern.MatchString(msg) {
 			// 查找字段位置
 			fieldKey := fmt.Sprintf(`"%s":`, rule.Field)
 			pos := strings.Index(msg, fieldKey)
