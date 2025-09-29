@@ -67,6 +67,24 @@ func (u *User) UnsubTopic(topicId string) int {
 	return len(u.SubTopics)
 }
 
+// UnsubAllTopics 取消用户的所有主题订阅（用户侧与主题侧同时清理）
+func (u *User) UnsubAllTopics() int {
+	u.Lock()
+	defer u.Unlock()
+
+	for topicId, topic := range u.SubTopics {
+		if topic != nil {
+			// 从主题订阅集合中移除该用户
+			topic.RemoveSubUser(u.Suid)
+		}
+
+		// 从用户侧映射移除该主题
+		delete(u.SubTopics, topicId)
+	}
+
+	return len(u.SubTopics)
+}
+
 // AppLogin 用户APP客户端登录
 func (u *User) appLogin(appId string, client *Client) error {
 	var index int

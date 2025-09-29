@@ -67,12 +67,27 @@ func (h *Hubc) Run() {
 }
 
 func (h *Hubc) guard() {
+	cleanupTTL := 5 * time.Minute
 	timer := time.NewTicker(30 * time.Second)
 	for range timer.C {
 		userCount := 0
 		guestCount := len(h.Guests)
 		h.Users.Range(func(key, value any) bool {
-			userCount++
+			user, ok := value.(*User)
+			if !ok || user == nil {
+				return true
+			}
+
+			if len(user.AppClients) == 0 {
+				if time.Since(user.LastHeartbeatTime) >= cleanupTTL {
+					user.UnsubAllTopics()
+					h.Users.Delete(key)
+					h.PubSub.Pub("cleanupUser", H{"suid": user.Suid})
+				}
+			} else {
+				userCount++
+			}
+
 			return true
 		})
 

@@ -6,10 +6,10 @@ import (
 )
 
 type Topic struct {
-	Id          string   //订阅主题ID
-	PubSub      *PubSub  //关联PubSub
-	SubUsers    sync.Map //SubUsers map[string]*time.Time //订阅用户uniqueId和订阅时间
-	SubHandlers sync.Map //SubHandlers map[string]func(msg *TopicMsg) //内部组件间通知
+    Id          string   //订阅主题ID
+    PubSub      *PubSub  //关联PubSub
+    SubUsers    sync.Map //SubUsers map[string]*time.Time //订阅用户uniqueId和订阅时间
+    SubHandlers sync.Map //SubHandlers map[string]func(msg *TopicMsg) //内部组件间通知
 }
 
 func (a *Topic) AddSubUser(user *User) {
@@ -18,7 +18,12 @@ func (a *Topic) AddSubUser(user *User) {
 }
 
 func (a *Topic) AddSubHandle(f func(msg *TopicMsg)) {
-	a.SubHandlers.LoadOrStore(a.Id, f)
+    a.SubHandlers.LoadOrStore(a.Id, f)
+}
+
+// RemoveSubUser 从主题订阅集合中移除指定用户
+func (a *Topic) RemoveSubUser(suid string) {
+    a.SubUsers.Delete(suid)
 }
 
 func (a *Topic) SendToSubUser(msg []byte) {
