@@ -121,7 +121,7 @@ func createProject(name, packageName string) {
 
 // runGoModTidy 在指定目录先更新依赖然后执行
 func runGoModTidy(projectDir string) error {
-	getCmd := exec.Command("go", "get", "-u", "github.com/wonli/aqi@latest")
+	getCmd := exec.Command("go", "get", "-u", ".")
 	getCmd.Dir = projectDir
 	getCmd.Stdout = os.Stdout
 	getCmd.Stderr = os.Stderr

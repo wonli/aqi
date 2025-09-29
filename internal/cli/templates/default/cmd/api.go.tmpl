@@ -19,7 +19,7 @@ var api = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		app := aqi.Init(
 			aqi.ConfigFile(configFile),
-			aqi.HttpServer("Api", "apiPort"),
+			aqi.HttpServer("Api", "port"),
 		)
 
 		dbc.InitDBC()
