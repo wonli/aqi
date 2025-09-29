@@ -59,6 +59,11 @@ type Client struct {
 
 	mu   sync.RWMutex
 	Keys map[string]any
+
+	// recent logs ring buffer (last 100 items)
+	recentLogs  [100]string
+	recentIdx   int
+	recentCount int
 }
 
 // Reader 读取
@@ -159,6 +164,14 @@ func (c *Client) Log(symbol string, msg ...string) {
 	}
 
 	logger.SugarLog.Info(s)
+
+	c.mu.Lock()
+	c.recentLogs[c.recentIdx] = fmt.Sprintf("%s %s", time.Now().Format(time.RFC3339), s)
+	c.recentIdx = (c.recentIdx + 1) % 100
+	if c.recentCount < 100 {
+		c.recentCount++
+	}
+	c.mu.Unlock()
 }
 
 // SendMsg 把消息加入发送队列
@@ -200,4 +213,23 @@ func (c *Client) Close() {
 		//打印日志
 		c.Log("xx", fmt.Sprintf("Close client -> %s", c.IpAddressPort))
 	}
+}
+
+func (c *Client) GetRecentLogs() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	count := c.recentCount
+	if count == 0 {
+		return nil
+	}
+
+	res := make([]string, count)
+	oldest := (c.recentIdx - count + 100) % 100
+	for i := 0; i < count; i++ {
+		idx := (oldest + i) % 100
+		res[i] = c.recentLogs[idx]
+	}
+
+	return res
 }
