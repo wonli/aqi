@@ -43,11 +43,11 @@ func Dispatcher(c *Client, request string) {
 		c.LastHeartbeatTime = t
 	}
 
-	handlers := InitManager().Handlers(req.Action)
-	if handlers == nil || len(handlers) == 0 {
-		c.SendActionMsg(&Action{Action: req.Action, Code: -1005, Msg: "request not supported"})
-		return
-	}
+    handlers := InitManager().Handlers(req.Action)
+    if len(handlers) == 0 {
+        c.SendActionMsg(&Action{Action: req.Action, Code: -1005, Msg: "request not supported"})
+        return
+    }
 
 	ctx := &Context{
 		Id:     req.Id,

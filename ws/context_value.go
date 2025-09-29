@@ -33,11 +33,7 @@ func (v *Value) Raw() any {
 }
 
 func (v *Value) IsNil() bool {
-	if v.data == nil {
-		return true
-	}
-
-	return false
+	return v.data == nil
 }
 
 func (v *Value) String() string {
