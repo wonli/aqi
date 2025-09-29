@@ -2,9 +2,10 @@ package ws
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/wonli/aqi/logger"
 	"go.uber.org/zap"
-	"time"
 )
 
 func (c *Context) AddLog(log string, args ...any) {
@@ -12,7 +13,7 @@ func (c *Context) AddLog(log string, args ...any) {
 }
 
 func (c *Context) FlushLog() {
-	if c.logs == nil || len(c.logs) == 0 {
+	if c == nil || c.logs == nil || len(c.logs) == 0 {
 		return
 	}
 
