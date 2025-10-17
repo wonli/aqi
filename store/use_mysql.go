@@ -1,15 +1,15 @@
 package store
 
 import (
-	"github.com/spf13/viper"
-	"go.uber.org/zap"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
-	gormLogger "gorm.io/gorm/logger"
-	"gorm.io/gorm/schema"
+    "github.com/spf13/viper"
+    "go.uber.org/zap"
+    "gorm.io/driver/mysql"
+    "gorm.io/gorm"
+    gormLogger "gorm.io/gorm/logger"
+    "gorm.io/gorm/schema"
 
-	"github.com/wonli/aqi/internal/config"
-	"github.com/wonli/aqi/logger"
+    "github.com/wonli/aqi/internal/config"
+    "github.com/wonli/aqi/logger"
 )
 
 type MySQLStore struct {
@@ -45,9 +45,9 @@ func (m *MySQLStore) Callback(fn callback) {
 }
 
 func (m *MySQLStore) Use() *gorm.DB {
-	if m.gormDB != nil {
-		return m.gormDB
-	}
+    if m.gormDB != nil {
+        return m.gormDB
+    }
 
 	r := m.Config()
 	if r == nil {
@@ -58,12 +58,12 @@ func (m *MySQLStore) Use() *gorm.DB {
 		return nil
 	}
 
-	conf := &gorm.Config{
-		Logger: gormLogger.Default.LogMode(gormLogger.LogLevel(r.LogLevel)),
-		NamingStrategy: schema.NamingStrategy{
-			TablePrefix: r.Prefix,
-		},
-	}
+    conf := &gorm.Config{
+        Logger: logger.NewZapGormLogger(logger.SugarLog, gormLogger.Config{LogLevel: gormLogger.LogLevel(r.LogLevel)}),
+        NamingStrategy: schema.NamingStrategy{
+            TablePrefix: r.Prefix,
+        },
+    }
 
 	if m.options != nil {
 		if m.options.Logger == nil {
@@ -77,11 +77,11 @@ func (m *MySQLStore) Use() *gorm.DB {
 		m.options = conf
 	}
 
-	db, err := gorm.Open(mysql.Open(r.GetDsn()), conf)
-	if err != nil {
-		logger.SugarLog.Error("Failed to connect to MySQL database", zap.String("error", err.Error()))
-		return nil
-	}
+    db, err := gorm.Open(mysql.Open(r.GetDsn()), m.options)
+    if err != nil {
+        logger.SugarLog.Error("Failed to connect to MySQL database", zap.String("error", err.Error()))
+        return nil
+    }
 
 	if m.hasCallback {
 		m.callback(db)
