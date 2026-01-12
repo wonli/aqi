@@ -45,6 +45,7 @@ type Client struct {
 	StoreId           uint      `json:"storeId"`           //店铺ID
 	MerchantId        uint      `json:"merchantId"`        //商户ID
 	TenantId          uint      `json:"tenantId"`          //租户ID
+	Version           string    `json:"version"`           //客户端版本号
 	Platform          string    `json:"platform"`          //登录平台
 	GroupId           string    `json:"groupId"`           //用户分组Id
 	IsLogin           bool      `json:"isLogin"`           //是否已登录

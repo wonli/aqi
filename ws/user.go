@@ -59,8 +59,13 @@ func (u *User) UnsubTopic(topicId string) int {
 	u.Lock()
 	defer u.Unlock()
 
-	_, ok := u.SubTopics[topicId]
+	topic, ok := u.SubTopics[topicId]
 	if ok {
+		// 从主题订阅集合中移除该用户
+		if topic != nil {
+			topic.RemoveSubUser(u.Suid)
+		}
+		// 从用户侧映射移除该主题
 		delete(u.SubTopics, topicId)
 	}
 

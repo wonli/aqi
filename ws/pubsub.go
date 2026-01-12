@@ -65,6 +65,15 @@ func (a *PubSub) SubFunc(topicId string, f func(msg *TopicMsg)) {
 	a.initTopic(topicId).AddSubHandle(f)
 }
 
+// Unsub 取消订阅主题
+func (a *PubSub) Unsub(topicId string, user *User) {
+	topic, ok := a.Topics.Load(topicId)
+	if ok {
+		topic.(*Topic).RemoveSubUser(user.Suid)
+		user.UnsubTopic(topicId)
+	}
+}
+
 func (a *PubSub) Start() {
 	for msg := range a.TopicMsgQueue {
 		t, hasTopic := a.Topics.Load(msg.TopicId)

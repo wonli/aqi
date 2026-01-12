@@ -11,3 +11,7 @@ func Sub(topicId string, user *User) {
 func SubFunc(topicId string, f func(msg *TopicMsg)) {
 	Hub.PubSub.SubFunc(topicId, f)
 }
+
+func Unsub(topicId string, user *User) {
+	Hub.PubSub.Unsub(topicId, user)
+}
