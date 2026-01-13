@@ -2,13 +2,14 @@ package ws
 
 import (
 	"fmt"
-	"github.com/gobwas/ws"
-	"golang.org/x/time/rate"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gobwas/ws"
+	"golang.org/x/time/rate"
 
 	"github.com/gobwas/ws/wsutil"
 
@@ -16,47 +17,44 @@ import (
 )
 
 type Client struct {
-	Hub            *Hubc       `json:"-"`
-	Conn           net.Conn    `json:"-"`
-	Send           chan []byte `json:"-"`
-	Endpoint       string      `json:"-"` //入口地址
-	OnceId         string      `json:"-"` //临时ID，扫码登录等场景作为客户端唯一标识
-	ClientId       string      `json:"-"` //客户端ID
-	Disconnecting  bool        `json:"-"` //已被设置为断开状态（消息发送完之后断开连接）
-	SyncMsg        bool        `json:"-"` //是否接收消息
-	LastMsgId      int         `json:"-"` //最后一条消息ID
-	RequiredValid  bool        `json:"-"` //人机验证标识
-	Validated      bool        `json:"-"` //是否已验证
-	ValidExpiry    time.Time   `json:"-"` //验证有效期
-	ValidCacheData any         `json:"-"` //验证相关缓存数据
-	AuthCode       string      `json:"-"` //用于校验JWT中的code，如果相等识别为同一个用户的网络地址变更
-	ErrorCount     int         `json:"-"` //错误次数
-	Closed         bool        `json:"-"` //是否已经关闭
+	Hub            *Hubc
+	Conn           net.Conn
+	Send           chan []byte
+	Endpoint       string    //入口地址
+	OnceId         string    //临时ID，扫码登录等场景作为客户端唯一标识
+	ClientId       string    //客户端ID
+	Disconnecting  bool      //已被设置为断开状态（消息发送完之后断开连接）
+	SyncMsg        bool      //是否接收消息
+	LastMsgId      int       //最后一条消息ID
+	RequiredValid  bool      //人机验证标识
+	Validated      bool      //是否已验证
+	ValidExpiry    time.Time //验证有效期
+	ValidCacheData any       //验证相关缓存数据
+	AuthCode       string    //用于校验JWT中的code，如果相等识别为同一个用户的网络地址变更
+	ErrorCount     int       //错误次数
+	Closed         bool      //是否已经关闭
 
-	Limiter      *rate.Limiter `json:"-"` //限速器
-	RequestQueue chan string   `json:"-"` //处理队列
+	Limiter      *rate.Limiter //限速器
+	RequestQueue chan string   //处理队列
 
-	HttpRequest *http.Request       `json:"-"`
-	HttpWriter  http.ResponseWriter `json:"-"`
+	HttpRequest *http.Request
+	HttpWriter  http.ResponseWriter
 
-	User              *User     `json:"user,omitempty"`    //关联用户
-	Scope             string    `json:"scope"`             //登录jwt scope, 用于判断用户从哪里登录的
-	AppId             string    `json:"appId"`             //登录应用Id
-	StoreId           uint      `json:"storeId"`           //店铺ID
-	MerchantId        uint      `json:"merchantId"`        //商户ID
-	TenantId          uint      `json:"tenantId"`          //租户ID
-	Version           string    `json:"version"`           //客户端版本号
-	Platform          string    `json:"platform"`          //登录平台
-	GroupId           string    `json:"groupId"`           //用户分组Id
-	IsLogin           bool      `json:"isLogin"`           //是否已登录
-	LoginAction       string    `json:"loginAction"`       //登录动作
-	ForceDialogId     string    `json:"forceDialogId"`     //打开聊天界面的会话ID
-	IpAddress         string    `json:"ipAddress"`         //IP地址
-	IpAddressPort     string    `json:"IpAddressPort"`     //IP地址和端口
-	IpLocation        string    `json:"ipLocation"`        //通过IP转换获得的地理位置
-	ConnectionTime    time.Time `json:"connectionTime"`    //连接时间
-	LastRequestTime   time.Time `json:"lastRequestTime"`   //最后请求时间
-	LastHeartbeatTime time.Time `json:"lastHeartbeatTime"` //最后发送心跳时间
+	User              *User     //关联用户
+	Scope             string    //登录jwt scope, 用于判断用户从哪里登录的
+	AppId             string    //登录应用Id
+	TenantId          uint      //租户ID
+	Version           string    //客户端版本号
+	Platform          string    //登录平台
+	IsLogin           bool      //是否已登录
+	LoginAction       string    //登录动作
+	ForceDialogId     string    //打开聊天界面的会话ID
+	IpAddress         string    //IP地址
+	IpAddressPort     string    //IP地址和端口
+	IpLocation        string    //通过IP转换获得的地理位置
+	ConnectionTime    time.Time //连接时间
+	LastRequestTime   time.Time //最后请求时间
+	LastHeartbeatTime time.Time //最后发送心跳时间
 
 	mu   sync.RWMutex
 	Keys map[string]any
@@ -233,4 +231,8 @@ func (c *Client) GetRecentLogs() []string {
 	}
 
 	return res
+}
+
+func (c *Client) MarshalJSON() ([]byte, error) {
+	return []byte("{}"), nil
 }
