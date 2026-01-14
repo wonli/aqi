@@ -1,0 +1,15 @@
+[Unit]
+Description={{.Description}}
+After={{.After}}
+
+[Service]
+User={{.User}}
+WorkingDirectory={{.WorkingDirectory}}
+RestartSec={{.RestartSec}}
+Type=simple
+
+ExecStart={{.ExecStart}}
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
