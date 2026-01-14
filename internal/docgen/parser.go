@@ -776,7 +776,18 @@ func parseHandler(handler ast.Expr, action *ActionDoc, file *ast.File, fset *tok
 		found := false
 		ast.Inspect(file, func(n ast.Node) bool {
 			if fn, ok := n.(*ast.FuncDecl); ok && fn.Name.Name == ident.Name {
-				extractParamsFromFunc(fn, action, file, fset)
+				// 获取当前文件所在目录，用于查找同一包内的类型
+				packageDir := ""
+				if routerFilePath != "" {
+					packageDir = filepath.Dir(routerFilePath)
+				}
+				// 如果无法从文件路径获取，尝试从文件内容推断
+				if packageDir == "" {
+					// 尝试从 import 路径推断包目录（作为后备方案）
+					// 这里暂时使用空字符串，让 extractStructFields 处理
+				}
+				// 使用支持包目录的版本
+				extractParamsFromFuncWithPackage(fn, action, file, fset, packageDir)
 				extractReturnsFromFunc(fn, action, file, fset)
 				found = true
 				return false
@@ -797,7 +808,13 @@ func parseHandler(handler ast.Expr, action *ActionDoc, file *ast.File, fset *tok
 		}
 	} else if fn, ok := handler.(*ast.FuncLit); ok {
 		// 匿名函数
-		extractParamsFromFuncBody(fn.Body, action, file, fset)
+		// 获取当前文件所在目录，用于查找同一包内的类型
+		packageDir := ""
+		if routerFilePath != "" {
+			packageDir = filepath.Dir(routerFilePath)
+		}
+		// 使用支持包目录的版本（如果包目录为空，函数内部会回退）
+		extractParamsFromFuncBody(fn.Body, action, file, fset, packageDir)
 		extractReturnsFromFuncBody(fn.Body, action, file, fset)
 	}
 	return nil
@@ -896,11 +913,14 @@ func parseExternalHandler(filePath, funcName string, action *ActionDoc) {
 		return
 	}
 
+	// 获取包目录，用于查找同一包内的其他文件
+	packageDir := filepath.Dir(filePath)
+
 	// 查找函数定义
 	ast.Inspect(node, func(n ast.Node) bool {
 		if fn, ok := n.(*ast.FuncDecl); ok && fn.Name.Name == funcName {
-			// 提取参数和返回值
-			extractParamsFromFunc(fn, action, node, fset)
+			// 提取参数和返回值，传入包目录以便查找同一包内的类型
+			extractParamsFromFuncWithPackage(fn, action, node, fset, packageDir)
 			extractReturnsFromFunc(fn, action, node, fset)
 
 			// 提取函数注释作为描述
@@ -911,6 +931,111 @@ func parseExternalHandler(filePath, funcName string, action *ActionDoc) {
 		}
 		return true
 	})
+}
+
+// extractParamsFromFuncWithPackage 从函数中提取参数（支持查找同一包内的类型）
+func extractParamsFromFuncWithPackage(fn *ast.FuncDecl, action *ActionDoc, file *ast.File, fset *token.FileSet, packageDir string) {
+	if fn.Body == nil {
+		return
+	}
+	extractParamsFromFuncBody(fn.Body, action, file, fset, packageDir)
+}
+
+// extractStructFieldsWithPackage 提取结构体字段（支持查找同一包内的类型）
+func extractStructFieldsWithPackage(typeExpr ast.Expr, action *ActionDoc, file *ast.File, packageDir string) {
+	// 处理指针类型：*model.QuestionsGroup
+	if star, ok := typeExpr.(*ast.StarExpr); ok {
+		// 递归处理指针指向的类型
+		extractStructFieldsWithPackage(star.X, action, file, packageDir)
+		return
+	}
+
+	// 处理复合字面量：struct{...}{}（匿名结构体）
+	if compLit, ok := typeExpr.(*ast.CompositeLit); ok {
+		if compLit.Type != nil {
+			extractStructFieldsWithPackage(compLit.Type, action, file, packageDir)
+		}
+		return
+	}
+
+	// 处理类型标识符：在当前文件或同一包的其他文件中查找
+	if ident, ok := typeExpr.(*ast.Ident); ok {
+		// 先在当前文件中查找
+		found := false
+		ast.Inspect(file, func(n ast.Node) bool {
+			if ts, ok := n.(*ast.TypeSpec); ok && ts.Name.Name == ident.Name {
+				if st, ok := ts.Type.(*ast.StructType); ok {
+					extractFieldsFromStruct(st, action)
+					found = true
+					return false
+				}
+			}
+			return true
+		})
+
+		// 如果当前文件没找到，在同一包的其他文件中查找
+		if !found && packageDir != "" {
+			files, err := os.ReadDir(packageDir)
+			if err == nil {
+				for _, f := range files {
+					if f.IsDir() || !strings.HasSuffix(f.Name(), ".go") {
+						continue
+					}
+					otherFilePath := filepath.Join(packageDir, f.Name())
+					fset := token.NewFileSet()
+					otherNode, err := parser.ParseFile(fset, otherFilePath, nil, parser.ParseComments)
+					if err != nil {
+						continue
+					}
+					// 确保是同一个包
+					if otherNode.Name != nil && file.Name != nil && otherNode.Name.Name == file.Name.Name {
+						ast.Inspect(otherNode, func(n ast.Node) bool {
+							if ts, ok := n.(*ast.TypeSpec); ok && ts.Name.Name == ident.Name {
+								if st, ok := ts.Type.(*ast.StructType); ok {
+									extractFieldsFromStruct(st, action)
+									found = true
+									return false
+								}
+							}
+							return true
+						})
+						if found {
+							break
+						}
+					}
+				}
+			}
+		}
+		return
+	}
+
+	// 处理 SelectorExpr：model.QuestionsGroup
+	if sel, ok := typeExpr.(*ast.SelectorExpr); ok {
+		// 获取包名和类型名
+		var pkgName, typeName string
+		if pkgIdent, ok := sel.X.(*ast.Ident); ok {
+			pkgName = pkgIdent.Name
+			typeName = sel.Sel.Name
+		}
+
+		if pkgName != "" && typeName != "" {
+			// 从 import 语句中找到包的完整路径
+			packagePath := findPackagePath(pkgName, file)
+			if packagePath != "" {
+				// 查找类型定义
+				typeFile := findTypeFile(packagePath, typeName)
+				if typeFile != "" {
+					parseExternalType(typeFile, typeName, action)
+				}
+			}
+		}
+		return
+	}
+
+	// 直接的结构体类型（包括匿名结构体）
+	if st, ok := typeExpr.(*ast.StructType); ok {
+		extractFieldsFromStruct(st, action)
+	}
 }
 
 // findTypeFile 查找类型定义所在的文件
@@ -983,17 +1108,10 @@ func parseExternalType(filePath, typeName string, action *ActionDoc) {
 	})
 }
 
-// extractParamsFromFunc 从函数中提取参数
-func extractParamsFromFunc(fn *ast.FuncDecl, action *ActionDoc, file *ast.File, fset *token.FileSet) {
-	if fn.Body == nil {
-		return
-	}
-	extractParamsFromFuncBody(fn.Body, action, file, fset)
-}
-
 // extractParamsFromFuncBody 从函数体中提取参数
-func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast.File, fset *token.FileSet) {
-	// 查找 BindingJson 调用
+// packageDir 是可选的包目录，用于查找同一包内的类型定义
+func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast.File, fset *token.FileSet, packageDir string) {
+	// 查找 BindingJson、BindingValidateJson 或 GetJson 调用
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -1005,8 +1123,8 @@ func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast
 			return true
 		}
 
-		// 查找 a.BindingJson(&req) 或 a.BindingValidateJson(&req) 调用
-		if (sel.Sel.Name == "BindingJson" || sel.Sel.Name == "BindingValidateJson") && len(call.Args) > 0 {
+		// 查找 a.BindingJson(&req)、a.BindingValidateJson(&req) 或 a.GetJson(&req) 调用
+		if (sel.Sel.Name == "BindingJson" || sel.Sel.Name == "BindingValidateJson" || sel.Sel.Name == "GetJson") && len(call.Args) > 0 {
 			if unary, ok := call.Args[0].(*ast.UnaryExpr); ok && unary.Op == token.AND {
 				if ident, ok := unary.X.(*ast.Ident); ok {
 					// 查找变量声明（支持 var 和 := 两种方式）
@@ -1060,7 +1178,12 @@ func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast
 					})
 
 					if varType != nil {
-						extractStructFields(varType, action, file)
+						// 传入包目录（如果提供）
+						if packageDir != "" {
+							extractStructFields(varType, action, file, packageDir)
+						} else {
+							extractStructFields(varType, action, file)
+						}
 					}
 				}
 			}
@@ -1153,9 +1276,19 @@ func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast
 			}
 		}
 
-		// 查找 a.GetPagination() 调用
-		// GetPagination 从请求参数中的 "page" 路径获取分页对象，类似 BindingJsonPath
-		if sel.Sel.Name == "GetPagination" {
+		// 查找 a.GetPagination() 或 a.GetMaxPagination() 调用
+		// GetPagination/GetMaxPagination 从请求参数中的 "page" 路径获取分页对象，类似 BindingJsonPath
+		if sel.Sel.Name == "GetPagination" || sel.Sel.Name == "GetMaxPagination" {
+			// 检查是否是 a.GetPagination() 调用（sel.X 应该是函数参数 a）
+			if sel.X == nil {
+				return true
+			}
+			// 只处理 sel.X 是标识符的情况（通常是函数参数名，如 "a"）
+			_, ok := sel.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+
 			// 添加 page 对象下的分页参数
 			// 根据 ws.Page 结构体：Current (int), PageSize (int)
 			paginationParams := []struct {
@@ -1187,6 +1320,16 @@ func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast
 
 		// 查找 a.Get(), a.GetInt() 等调用
 		if sel.Sel.Name == "Get" || sel.Sel.Name == "GetInt" || sel.Sel.Name == "GetBool" || sel.Sel.Name == "GetId" {
+			// 检查是否是 a.Get() 调用（sel.X 应该是函数参数 a）
+			if sel.X == nil {
+				return true
+			}
+			// 只处理 sel.X 是标识符的情况（通常是函数参数名，如 "a"）
+			_, ok := sel.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+
 			if len(call.Args) > 0 {
 				key := extractStringLiteral(call.Args[0])
 				if key != "" {
@@ -1223,8 +1366,20 @@ func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast
 	})
 }
 
-// extractStructFields 提取结构体字段
-func extractStructFields(typeExpr ast.Expr, action *ActionDoc, file *ast.File) {
+// extractStructFields 提取结构体字段（在当前文件或跨包中查找）
+// packageDir 是可选的包目录，如果提供则会在同一包的其他文件中查找类型
+func extractStructFields(typeExpr ast.Expr, action *ActionDoc, file *ast.File, packageDir ...string) {
+	var dir string
+	if len(packageDir) > 0 {
+		dir = packageDir[0]
+	}
+
+	// 如果提供了包目录，使用支持包目录的版本
+	if dir != "" {
+		extractStructFieldsWithPackage(typeExpr, action, file, dir)
+		return
+	}
+
 	// 处理指针类型：*model.QuestionsGroup
 	if star, ok := typeExpr.(*ast.StarExpr); ok {
 		// 递归处理指针指向的类型
@@ -1241,6 +1396,8 @@ func extractStructFields(typeExpr ast.Expr, action *ActionDoc, file *ast.File) {
 	}
 
 	// 处理类型标识符：在当前文件中查找
+	// 注意：如果类型在同一包的其他文件中，这里可能找不到
+	// 但跨包的类型可以通过 SelectorExpr 路径找到
 	if ident, ok := typeExpr.(*ast.Ident); ok {
 		ast.Inspect(file, func(n ast.Node) bool {
 			if ts, ok := n.(*ast.TypeSpec); ok && ts.Name.Name == ident.Name {
@@ -1251,6 +1408,7 @@ func extractStructFields(typeExpr ast.Expr, action *ActionDoc, file *ast.File) {
 			}
 			return true
 		})
+		// 如果当前文件没找到，且提供了包目录，会在 extractStructFieldsWithPackage 中查找同一包的其他文件
 		return
 	}
 
