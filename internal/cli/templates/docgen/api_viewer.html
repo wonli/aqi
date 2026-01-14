@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 文档调试工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script>
+        // 文档列表数据（通过模板注入）
+        window.__DOCS_CONFIG__ = {{.DocsConfig}} || [];
+    </script>
+    <style>
+        /* 自定义滚动条样式 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* 启动加载体验：应用未就绪前只展示 Loading */
+        [v-cloak] { display: none; }
+        body:not(.app-ready) #app { display: none; }
+        body.app-ready #boot-loading { display: none; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- 启动 Loading：在 Vue 完成初始化前仅显示此区域 -->
+    <div id="boot-loading" class="fixed inset-0 flex items-center justify-center bg-gray-50">
+        <div class="text-center text-gray-500">
+            <div class="mx-auto mb-4 h-10 w-10 rounded-full border-4 border-gray-200 border-t-blue-600 animate-spin"></div>
+            <p class="text-base">Loading...</p>
+        </div>
+    </div>
+
+    <div id="app" v-cloak>
+        <!-- 顶部文档切换器 -->
+        <div v-if="availableDocs.length > 1" class="bg-white border-b border-gray-200 px-4 py-2">
+            <select v-model="currentDocName" @change="switchDocument" 
+                    class="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option v-for="doc in availableDocs" :key="doc.name" :value="doc.name">{{ doc.label }}</option>
+            </select>
+        </div>
+
+        <div class="flex h-screen relative" style="height: calc(100vh - 40px);">
+            <!-- 遮罩层（小屏幕菜单打开时显示） -->
+            <div v-if="menuOpen" 
+                 @click.stop="menuOpen = false"
+                 class="md:hidden fixed inset-0 bg-black bg-opacity-50 z-20"></div>
+            <!-- 菜单切换按钮（小屏幕显示） -->
+            <button v-if="!menuOpen" 
+                    @click="menuOpen = true"
+                    class="md:hidden fixed top-2 left-2 z-40 p-2 bg-white border border-gray-300 rounded-md shadow-md hover:bg-gray-50">
+                <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+            
+            <!-- 左侧树形菜单 -->
+            <div :class="[
+                'bg-white border-r border-gray-200 overflow-y-auto custom-scrollbar transition-transform duration-300 ease-in-out',
+                'fixed md:static inset-y-0 left-0 z-30',
+                menuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+                'w-80'
+            ]">
+                <!-- 关闭按钮（小屏幕显示） -->
+                <div class="md:hidden flex justify-end p-2 border-b border-gray-200">
+                    <button @click.stop="menuOpen = false" class="p-2 hover:bg-gray-100 rounded-md z-50 relative">
+                        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="p-4">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-5">API 列表</h2>
+                    <div v-if="docData && docData.files && docData.files.length > 0">
+                        <div v-for="file in docData.files" :key="file.fileName">
+                            <div v-for="group in file.middlewareGroups" :key="group.name" class="mb-3">
+                                <!-- Middleware Group -->
+                                <div class="mb-2">
+                                    <button @click="toggleGroup(group.name)" 
+                                            class="w-full text-left px-4 py-2.5 flex items-center justify-between text-base font-medium text-gray-800 hover:text-gray-900 transition-colors">
+                                        <span>{{ group.name }}</span>
+                                        <svg class="w-4 h-4 text-gray-500 transition-transform duration-200" 
+                                             :class="expandedGroups[group.name] ? 'rotate-90' : ''"
+                                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                        </svg>
+                                    </button>
+                                    
+                                    <!-- Categories -->
+                                    <div v-show="expandedGroups[group.name]" class="ml-2 mt-1">
+                                        <div v-for="category in group.categories" :key="category.name" class="mb-1">
+                                            <!-- 如果分类下只有一个 action，直接显示 action，不显示分类按钮 -->
+                                            <template v-if="category.actions.length === 1">
+                                                <button v-for="action in category.actions" 
+                                                        :key="action.name"
+                                                        v-show="!filteredActions || filteredActions.has(action.name)"
+                                                        @click="selectAction(action)"
+                                                        :class="[
+                                                            'w-full text-left px-4 py-2 text-sm transition-colors',
+                                                            selectedAction && selectedAction.name === action.name 
+                                                                ? 'text-blue-600 font-medium' 
+                                                                : 'text-gray-700 hover:text-blue-600'
+                                                        ]">
+                                                    {{ action.name }}
+                                                </button>
+                                            </template>
+                                            <!-- 如果分类下有多个 action，显示分类按钮 -->
+                                            <template v-else>
+                                                <button @click="toggleCategory(group.name, category.name)"
+                                                        class="w-full text-left px-4 py-2 flex items-center justify-between text-sm text-gray-700 hover:text-gray-900 transition-colors">
+                                                    <span>{{ category.name }}</span>
+                                                    <svg class="w-4 h-4 text-gray-500 transition-transform duration-200" 
+                                                         :class="expandedCategories[`${group.name}-${category.name}`] ? 'rotate-90' : ''"
+                                                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                                    </svg>
+                                                </button>
+                                                
+                                                <!-- Actions -->
+                                                <div v-show="expandedCategories[`${group.name}-${category.name}`]" class="ml-2 mt-1">
+                                                    <button v-for="action in category.actions" 
+                                                            :key="action.name"
+                                                            v-show="!filteredActions || filteredActions.has(action.name)"
+                                                            @click="selectAction(action)"
+                                                            :class="[
+                                                                'w-full text-left px-4 py-2 text-sm transition-colors',
+                                                                selectedAction && selectedAction.name === action.name 
+                                                                    ? 'text-blue-600 font-medium' 
+                                                                    : 'text-gray-700 hover:text-blue-600'
+                                                            ]">
+                                                        {{ action.name }}
+                                                    </button>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else-if="loadError" class="text-red-600 text-sm text-center py-8">
+                        <p class="font-medium">文档加载失败</p>
+                        <p class="text-xs mt-2">{{ loadError }}</p>
+                        <p class="text-xs mt-2 text-gray-500">请检查浏览器控制台获取详细信息</p>
+                    </div>
+                    <div v-else-if="docData && (!docData.files || docData.files.length === 0)" class="text-gray-500 text-sm text-center py-8">
+                        <p>文档数据格式错误：缺少 files 字段</p>
+                        <p class="text-xs mt-2">请检查 JSON 文档格式</p>
+                    </div>
+                    <div v-else class="text-gray-500 text-sm text-center py-8">
+                        <p>加载中...</p>
+                        <p class="text-xs mt-2">如果长时间未加载，请检查浏览器控制台</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧内容区域 -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar bg-gray-50">
+                <!-- 搜索框（始终显示在顶部） -->
+                <div class="sticky p-6 max-w-4xl mx-auto">
+                    <div class="max-w-4xl mx-auto">
+                        <div class="relative">
+                            <input v-model="searchQuery"
+                                   type="text"
+                                   placeholder="搜索 Action（支持前缀搜索，如：user、carl.aicar）..."
+                                   class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                   @input="onSearchInput">
+                            <svg class="absolute left-3 top-3.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                            </svg>
+                            <button v-if="searchQuery"
+                                    @click="clearSearch"
+                                    class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div v-if="selectedAction" class="p-6 max-w-4xl mx-auto">
+                    <!-- 文档基础信息 -->
+                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <h1 class="text-2xl font-bold text-gray-900 mb-4">{{ selectedAction.name }}</h1>
+                        <div v-if="docData && docData.metadata" class="grid grid-cols-2 gap-4 text-sm mb-4">
+                            <div>
+                                <span class="text-gray-500">版本:</span>
+                                <span class="ml-2 text-gray-900">{{ docData.metadata.version }}</span>
+                            </div>
+                            <div v-if="docData.metadata.generatedAt">
+                                <span class="text-gray-500">更新:</span>
+                                <span class="ml-2 text-gray-900">{{ docData.metadata.generatedAt }}</span>
+                            </div>
+                        </div>
+                        <div v-if="docData && docData.info" class="border-t pt-4 mt-4">
+                            <div class="text-sm mb-2">
+                                <span class="text-gray-500">请求格式:</span>
+                                <code class="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">{{ docData.info.requestFormat }}</code>
+                            </div>
+                            <div class="text-sm">
+                                <span class="text-gray-500">响应格式:</span>
+                                <code class="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">{{ docData.info.responseFormat }}</code>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 服务器地址和调试按钮 -->
+                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">服务器地址</label>
+                            <div class="flex gap-2">
+                                <input v-model="serverUrl" 
+                                       type="text" 
+                                       placeholder="ws://localhost:8080/ws 或 http://localhost:8080/api"
+                                       class="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button @click="saveServer" 
+                                        :disabled="!serverUrl"
+                                        :class="[
+                                            'px-4 py-2 rounded-md font-medium text-white transition-colors text-sm',
+                                            !serverUrl 
+                                                ? 'bg-gray-400 cursor-not-allowed' 
+                                                : 'bg-green-600 hover:bg-green-700'
+                                        ]">
+                                    保存
+                                </button>
+                                <button @click="sendRequest" 
+                                        :disabled="!serverUrl || isSending"
+                                        :class="[
+                                            'px-6 py-2 rounded-md font-medium text-white transition-colors',
+                                            !serverUrl || isSending 
+                                                ? 'bg-gray-400 cursor-not-allowed' 
+                                                : 'bg-blue-600 hover:bg-blue-700'
+                                        ]">
+                                    {{ isSending ? '发送中...' : '发送请求' }}
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- 已保存的服务器列表 -->
+                        <div v-if="savedServers.length > 0" class="mt-4 pt-4 border-t border-gray-200">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">已保存的服务器</label>
+                            <div class="space-y-2">
+                                <div v-for="server in savedServers" 
+                                     :key="server.id"
+                                     class="flex items-center gap-2 p-2 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors">
+                                    <button @click="selectServer(server.url)"
+                                            class="flex-1 text-left text-sm text-gray-700 hover:text-blue-600 min-w-0">
+                                        <div class="font-medium truncate">{{ server.name || server.url }}</div>
+                                        <div class="text-xs text-gray-500 truncate" :title="server.url">{{ server.url }}</div>
+                                    </button>
+                                    <button @click="startEditServerName(server)"
+                                            class="px-2 py-1 text-xs text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded">
+                                        重命名
+                                    </button>
+                                    <button @click="deleteServer(server.id)"
+                                            class="px-2 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded">
+                                        删除
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 历史记录 -->
+                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-semibold text-gray-900">历史记录</h2>
+                            <div class="flex gap-2">
+                                <input v-model="historyFilter"
+                                       type="text"
+                                       placeholder="搜索历史记录..."
+                                       class="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button v-if="requestHistory.length > 0"
+                                        @click="clearHistory"
+                                        class="px-3 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded">
+                                    清空
+                                </button>
+                            </div>
+                        </div>
+                        <div v-if="getFilteredHistory().length > 0" class="flex flex-wrap gap-2">
+                            <div v-for="item in getFilteredHistory()" 
+                                 :key="item.id"
+                                 class="group relative">
+                                <button @click="applyHistory(item)"
+                                        class="px-3 py-2 bg-gray-100 hover:bg-blue-100 text-sm text-gray-700 hover:text-blue-700 rounded-md transition-colors flex items-center gap-2">
+                                    <span class="font-mono text-xs">{{ item.action }}</span>
+                                    <span class="text-xs text-gray-500">({{ new Date(item.timestamp).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }})</span>
+                                    <button @click.stop="deleteHistory(item.id)"
+                                            class="opacity-0 group-hover:opacity-100 ml-1 text-red-500 hover:text-red-700 text-xs">
+                                        ×
+                                    </button>
+                                </button>
+                            </div>
+                        </div>
+                        <div v-else class="text-gray-500 text-sm">
+                            <span v-if="historyFilter">未找到匹配的历史记录</span>
+                            <span v-else>暂无历史记录</span>
+                        </div>
+                    </div>
+                    
+                    
+                    
+                    <!-- 重命名服务器对话框 -->
+                    <div v-if="editingServerId" 
+                         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+                         @click.self="cancelEditServerName">
+                        <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4" @click.stop>
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">重命名服务器</h3>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">名称</label>
+                                <input v-model="editingServerName"
+                                       type="text"
+                                       placeholder="输入服务器名称"
+                                       class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       @keyup.enter="saveServerName"
+                                       @keyup.esc="cancelEditServerName">
+                                <p class="text-xs text-gray-500 mt-1">为空则显示地址</p>
+                            </div>
+                            <div class="flex gap-2 justify-end">
+                                <button @click="cancelEditServerName"
+                                        class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md">
+                                    取消
+                                </button>
+                                <button @click="saveServerName"
+                                        class="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    保存
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 响应结果模态框 -->
+                    <div v-if="showResponseModal && response" 
+                         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+                         @click.self="closeResponseModal"
+                         @keyup.esc="closeResponseModal"
+                         tabindex="0">
+                        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col" @click.stop>
+                            <!-- 模态框头部 -->
+                            <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                                <div>
+                                    <h3 class="text-lg font-semibold text-gray-900">响应结果</h3>
+                                    <div class="mt-1">
+                                        <span class="text-sm text-gray-500">状态: </span>
+                                        <span :class="[
+                                            'text-sm font-medium',
+                                            responseStatus === 'success' ? 'text-green-600' : 'text-red-600'
+                                        ]">
+                                            {{ responseStatus === 'success' ? '成功' : '失败' }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button @click.stop="copyResponse($event)"
+                                            class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                        </svg>
+                                        复制 JSON
+                                    </button>
+                                    <button @click.stop="closeResponseModal"
+                                            class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- 错误提示 -->
+                            <div v-if="responseStatus === 'error' && response.msg" 
+                                 class="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                                <div class="flex items-start">
+                                    <svg class="w-5 h-5 text-red-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                                    </svg>
+                                    <div class="flex-1">
+                                        <p class="text-sm font-medium text-red-800">错误信息</p>
+                                        <p class="text-sm text-red-700 mt-1">{{ response.msg }}</p>
+                                        <p v-if="response.code" class="text-xs text-red-600 mt-1">错误码: {{ response.code }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else-if="responseStatus === 'error' && response.error" 
+                                 class="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                                <div class="flex items-start">
+                                    <svg class="w-5 h-5 text-red-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                                    </svg>
+                                    <div class="flex-1">
+                                        <p class="text-sm font-medium text-red-800">错误</p>
+                                        <p class="text-sm text-red-700 mt-1">{{ response.error }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 响应内容 -->
+                            <div class="flex-1 overflow-y-auto p-6">
+                                <pre class="bg-gray-50 p-4 rounded-md overflow-x-auto text-xs"><code>{{ formattedResponse }}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action 详细信息 -->
+                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-4">接口信息</h2>
+                        <div class="space-y-3 text-sm">
+                            <div>
+                                <span class="text-gray-500">接口名称:</span>
+                                <span class="ml-2 text-gray-900 font-mono">{{ selectedAction.name }}</span>
+                            </div>
+                            <div v-if="selectedAction.description">
+                                <span class="text-gray-500">描述:</span>
+                                <span class="ml-2 text-gray-900">{{ selectedAction.description || '无' }}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500">认证要求:</span>
+                                <span class="ml-2 text-gray-900">{{ selectedAction.authRequirement }}</span>
+                            </div>
+                            <div v-if="selectedAction.returns">
+                                <span class="text-gray-500">返回类型:</span>
+                                <span class="ml-2 text-gray-900">{{ selectedAction.returns.successType || 'N/A' }}</span>
+                                <span class="ml-2 text-gray-500">({{ selectedAction.returns.hasData ? '有数据' : '无数据' }})</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 参数表单 -->
+                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-4">请求参数</h2>
+                        <div v-if="selectedAction.params && selectedAction.params.length > 0" class="space-y-4">
+                            <div v-for="param in selectedAction.params" :key="param.Name" class="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    {{ param.Name }}
+                                    <span v-if="param.Required" class="text-red-500 ml-1">*</span>
+                                    <span class="text-gray-400 text-xs ml-2">({{ param.Type }})</span>
+                                </label>
+                                <input v-if="param.Type === 'string' || param.Type === 'int' || param.Type === 'float'"
+                                       v-model="formData[param.Name]"
+                                       :type="param.Type === 'int' || param.Type === 'float' ? 'number' : 'text'"
+                                       :placeholder="getPlaceholder(param)"
+                                       class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <input v-else-if="param.Type === 'bool'"
+                                       type="checkbox"
+                                       v-model="formData[param.Name]"
+                                       class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <textarea v-else
+                                          v-model="formData[param.Name]"
+                                          :placeholder="getPlaceholder(param)"
+                                          rows="3"
+                                          class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                                <p v-if="param.Description" class="text-xs text-gray-500 mt-1">{{ param.Description }}</p>
+                                <button v-if="selectedAction.example && selectedAction.example.request && selectedAction.example.request.params[param.Name] !== undefined"
+                                        @click="fillExampleValue(param.Name)"
+                                        class="mt-1 text-xs text-blue-600 hover:text-blue-800">
+                                    使用示例值: {{ JSON.stringify(selectedAction.example.request.params[param.Name]) }}
+                                </button>
+                            </div>
+                        </div>
+                        <div v-else class="text-gray-500 text-sm">此接口无需参数</div>
+                    </div>
+
+                    <!-- 请求预览 -->
+                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-4">请求预览</h2>
+                        <pre class="bg-gray-50 p-4 rounded-md overflow-x-auto text-xs"><code>{{ requestPreview }}</code></pre>
+                    </div>
+
+                    <!-- 错误码说明 -->
+                    <div v-if="selectedAction.errorCodes && selectedAction.errorCodes.length > 0" 
+                         class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-4">错误码</h2>
+                        <div class="space-y-2">
+                            <div v-for="error in selectedAction.errorCodes" :key="error.Code" 
+                                 class="flex items-center gap-4 text-sm">
+                                <span class="font-mono text-red-600 w-20">{{ error.Code }}</span>
+                                <span class="text-gray-700">{{ error.Message }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 响应结果按钮（点击打开模态框） -->
+                    <div v-if="response" class="bg-white rounded-lg shadow-sm p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-semibold text-gray-900">响应结果</h2>
+                            <button @click="showResponseModal = true"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium">
+                                查看响应
+                            </button>
+                        </div>
+                        <div class="mb-2">
+                            <span class="text-sm text-gray-500">状态: </span>
+                            <span :class="[
+                                'text-sm font-medium',
+                                responseStatus === 'success' ? 'text-green-600' : 'text-red-600'
+                            ]">
+                                {{ responseStatus === 'success' ? '成功' : '失败' }}
+                            </span>
+                        </div>
+                        <div v-if="responseStatus === 'error' && response.msg" class="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                            {{ response.msg }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 未选择 Action 时的提示 -->
+                <div v-else class="flex items-center justify-center h-full">
+                    <div class="text-center text-gray-500">
+                        <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <p class="text-lg">请从左侧选择一个 API 接口</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JSON 数据通过 API 端点动态加载，不再嵌入到 HTML 中 -->
+
+    <script>
+        // 确保 Vue 库和 DOM 都加载完成后再初始化
+        window.addEventListener('load', function() {
+            // 等待 Vue 库加载
+            function initVue() {
+                if (typeof Vue === 'undefined') {
+                    console.error('Vue 库未加载，请检查 CDN 连接');
+                    // 启动阶段保持仅显示 Loading，避免闪现错误弹窗/模态框等干扰体验
+                    return;
+                }
+
+                try {
+                    const { createApp } = Vue;
+                    const app = document.getElementById('app');
+                    if (!app) {
+                        console.error('找不到 #app 元素');
+                        return;
+                    }
+
+                    createApp({
+            data() {
+                return {
+                    docData: null,
+                    selectedAction: null,
+                    expandedGroups: {},
+                    expandedCategories: {},
+                    formData: {},
+                    serverUrl: '',
+                    response: null,
+                    responseStatus: null,
+                    isSending: false,
+                    availableDocs: [],
+                    currentDocName: 'action',
+                    docs: {}, // 存储所有文档数据
+                    loadError: null, // 加载错误信息
+                    savedServers: [], // 已保存的服务器地址列表
+                    editingServerId: null, // 正在编辑名称的服务器 ID
+                    editingServerName: '', // 正在编辑的名称
+                    menuOpen: false, // 菜单是否打开（小屏幕，默认关闭）
+                    showResponseModal: false, // 是否显示响应模态框
+                    prefixTree: {}, // 前缀树结构
+                    selectedPrefix: null, // 当前选中的前缀
+                    expandedPrefixes: {}, // 展开的前缀节点
+                    requestHistory: [], // 请求历史记录
+                    historyFilter: '', // 历史记录搜索过滤
+                    searchQuery: '', // 搜索框输入
+                    searchMatchedActions: null, // 搜索匹配的 action 集合
+                    allActions: [] // 所有 action 列表（用于搜索）
+                };
+            },
+            computed: {
+                requestPreview() {
+                    if (!this.selectedAction) return '';
+                    
+                    const params = {};
+                    for (const param of this.selectedAction.params || []) {
+                        const value = this.formData[param.Name];
+                        if (value !== undefined && value !== null && value !== '') {
+                            // 类型转换
+                            if (param.Type === 'int') {
+                                params[param.Name] = parseInt(value);
+                            } else if (param.Type === 'float') {
+                                params[param.Name] = parseFloat(value);
+                            } else if (param.Type === 'bool') {
+                                params[param.Name] = Boolean(value);
+                            } else {
+                                params[param.Name] = value;
+                            }
+                        } else if (param.Required) {
+                            params[param.Name] = null; // 标记必填但未填
+                        }
+                    }
+                    
+                    return JSON.stringify({
+                        action: this.selectedAction.name,
+                        params: params
+                    }, null, 2);
+                },
+                formattedResponse() {
+                    if (!this.response) return '';
+                    return JSON.stringify(this.response, null, 2);
+                },
+                filteredActions() {
+                    // 如果有搜索结果，优先使用搜索匹配
+                    if (this.searchMatchedActions && this.searchMatchedActions.size > 0) {
+                        return this.searchMatchedActions;
+                    }
+                    // 如果没有选中前缀或文档数据，返回 null 表示不过滤
+                    if (!this.selectedPrefix || !this.docData || !this.docData.files) {
+                        return null;
+                    }
+                    
+                    // 收集所有匹配的 action 名称（基于前缀选择）
+                    const matchedActions = new Set();
+                    
+                    // 递归收集前缀树中匹配的 actions
+                    const collectActions = (tree) => {
+                        if (tree.actions) {
+                            tree.actions.forEach(action => matchedActions.add(action));
+                        }
+                        if (tree.children) {
+                            Object.keys(tree.children).forEach(key => {
+                                collectActions(tree.children[key]);
+                            });
+                        }
+                    };
+                    
+                    // 从根开始查找匹配的前缀路径
+                    const findPrefixPath = (parts, tree) => {
+                        if (parts.length === 0) {
+                            collectActions(tree);
+                            return;
+                        }
+                        const first = parts[0];
+                        if (tree.children && tree.children[first]) {
+                            findPrefixPath(parts.slice(1), tree.children[first]);
+                        }
+                    };
+                    
+                    const prefixParts = this.selectedPrefix.split('.');
+                    findPrefixPath(prefixParts, this.prefixTree);
+                    
+                    return matchedActions;
+                }
+            },
+            mounted() {
+                // 启动阶段：先完成必要初始化，再显示完整页面（避免未完成时出现错误/模态框）
+                (async () => {
+                    // 从 localStorage 加载已保存的服务器地址
+                    this.loadSavedServers();
+                    // 从 localStorage 加载历史记录
+                    this.loadFromHistory();
+                    // 从注入配置发现并加载文档（内部会设置 loadError）
+                    await this.discoverDocuments();
+
+                    // 标记应用已就绪：隐藏 Loading，显示页面
+                    document.body.classList.add('app-ready');
+                })();
+                
+                // 添加全局 ESC 键监听，用于关闭模态框
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        if (this.showResponseModal) {
+                            this.closeResponseModal();
+                        }
+                        if (this.editingServerId) {
+                            this.cancelEditServerName();
+                        }
+                    }
+                });
+            },
+            methods: {
+                async discoverDocuments() {
+                    // 从注入的配置中获取可用文档列表
+                    try {
+                        const docsList = window.__DOCS_CONFIG__ || [];
+                        
+                        this.availableDocs = docsList.map(doc => ({
+                            name: doc.name,
+                            label: doc.label,
+                            url: doc.file || doc.url
+                        }));
+                        
+                        console.log('发现文档:', this.availableDocs.map(d => `${d.name} (${d.label})`));
+                        
+                        // 设置默认文档（优先 action，否则第一个）
+                        if (this.availableDocs.length > 0) {
+                            const defaultDoc = this.availableDocs.find(d => d.name === 'action') || this.availableDocs[0];
+                            this.currentDocName = defaultDoc.name;
+                            console.log('设置默认文档为:', this.currentDocName);
+                            
+                            // 加载默认文档
+                            await this.loadDocument();
+                        } else {
+                            console.warn('未发现任何文档');
+                            this.loadError = '未找到任何文档文件。请确保已运行文档生成命令。';
+                        }
+                    } catch (error) {
+                        console.error('发现文档失败:', error);
+                        this.loadError = `无法获取文档列表: ${error.message}`;
+                    }
+                },
+                async loadDocument() {
+                    console.log('开始加载文档，currentDocName:', this.currentDocName);
+                    this.loadError = null; // 清除之前的错误
+                    
+                    if (!this.currentDocName) {
+                        this.loadError = '文档名称为空，无法加载文档';
+                        return;
+                    }
+                    
+                    // 1. 优先从缓存的文档数据中加载（最快）
+                    if (this.docs[this.currentDocName]) {
+                        console.log('从缓存加载文档:', this.currentDocName);
+                        this.docData = this.docs[this.currentDocName];
+                        this.initializeExpandedState();
+                        this.buildPrefixTree(); // 构建前缀树
+                        this.selectedAction = null;
+                        this.formData = {};
+                        this.response = null;
+                        console.log('文档加载成功（从缓存）:', this.docData.files ? this.docData.files.length : 0, '个文件');
+                        return;
+                    }
+                    
+                    // 2. 从 API 端点加载文档
+                    const docInfo = this.availableDocs.find(d => d.name === this.currentDocName);
+                    if (!docInfo) {
+                        const errorMsg = `文档 "${this.currentDocName}" 不存在。可用的文档: ${this.availableDocs.map(d => d.name).join(', ') || '无'}`;
+                        console.error(errorMsg);
+                        this.loadError = errorMsg;
+                        this.docData = null;
+                        return;
+                    }
+                    
+                    try {
+                        console.log('从 API 端点加载文档:', docInfo.url);
+                        const response = await fetch(docInfo.url);
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const data = await response.json();
+                        if (data && typeof data === 'object' && data.files) {
+                            this.docData = data;
+                            this.docs[this.currentDocName] = data; // 缓存
+                            this.initializeExpandedState();
+                            this.buildPrefixTree(); // 构建前缀树
+                            this.selectedAction = null;
+                            this.formData = {};
+                            this.response = null;
+                            console.log('文档加载成功（从 API）:', data.files.length, '个文件');
+                        } else {
+                            throw new Error('文档数据格式错误：缺少 files 字段');
+                        }
+                    } catch (error) {
+                        console.error('加载文档失败:', error);
+                        this.loadError = `无法加载文档 "${this.currentDocName}": ${error.message}`;
+                        this.docData = null;
+                    }
+                },
+                initializeExpandedState() {
+                    // 默认所有分组和分类都折叠
+                    // 注意：如果分类下只有一个 action，不需要初始化展开状态（因为不会显示分类按钮）
+                    if (this.docData && this.docData.files) {
+                        this.docData.files.forEach(file => {
+                            file.middlewareGroups.forEach(group => {
+                                this.expandedGroups[group.name] = false;
+                                group.categories.forEach(category => {
+                                    // 只有当分类下有多个 action 时，才需要初始化展开状态
+                                    if (category.actions.length > 1) {
+                                        this.expandedCategories[`${group.name}-${category.name}`] = false;
+                                    }
+                                });
+                            });
+                        });
+                    }
+                },
+                toggleGroup(groupName) {
+                    this.expandedGroups[groupName] = !this.expandedGroups[groupName];
+                },
+                toggleCategory(groupName, categoryName) {
+                    const key = `${groupName}-${categoryName}`;
+                    this.expandedCategories[key] = !this.expandedCategories[key];
+                },
+                selectAction(action) {
+                    this.selectedAction = action;
+                    this.formData = {};
+                    this.response = null;
+                    this.responseStatus = null;
+                    // 小屏幕下选择 action 后自动关闭菜单
+                    if (window.innerWidth < 768) {
+                        this.menuOpen = false;
+                    }
+                    
+                    // 初始化表单数据，不填入默认参数
+                    if (action.params) {
+                        action.params.forEach(param => {
+                            // 根据类型设置默认值（不填入示例值）
+                            if (param.Type === 'bool') {
+                                this.formData[param.Name] = false;
+                            } else {
+                                this.formData[param.Name] = '';
+                            }
+                        });
+                    }
+                },
+                getPlaceholder(param) {
+                    if (param.Type === 'int') return '请输入整数';
+                    if (param.Type === 'float') return '请输入数字';
+                    if (param.Type === 'bool') return '';
+                    return '请输入' + param.Name;
+                },
+                fillExampleValue(paramName) {
+                    if (this.selectedAction.example && this.selectedAction.example.request) {
+                        const value = this.selectedAction.example.request.params[paramName];
+                        this.formData[paramName] = value;
+                    }
+                },
+                async sendRequest() {
+                    if (!this.serverUrl || !this.selectedAction) return;
+                    
+                    // 构建请求参数
+                    const params = {};
+                    for (const param of this.selectedAction.params || []) {
+                        const value = this.formData[param.Name];
+                        if (value !== undefined && value !== null && value !== '') {
+                            // 类型转换
+                            if (param.Type === 'int') {
+                                params[param.Name] = parseInt(value);
+                            } else if (param.Type === 'float') {
+                                params[param.Name] = parseFloat(value);
+                            } else if (param.Type === 'bool') {
+                                params[param.Name] = Boolean(value);
+                            } else {
+                                params[param.Name] = value;
+                            }
+                        }
+                    }
+                    
+                    const requestBody = {
+                        action: this.selectedAction.name,
+                        params: params
+                    };
+                    
+                    this.isSending = true;
+                    this.response = null;
+                    this.responseStatus = null;
+                    
+                    try {
+                        // 判断是 WebSocket 还是 HTTP
+                        if (this.serverUrl.startsWith('ws://') || this.serverUrl.startsWith('wss://')) {
+                            // WebSocket 请求
+                            await this.sendWebSocketRequest(this.serverUrl, requestBody);
+                        } else {
+                            // HTTP 请求
+                            await this.sendHttpRequest(this.serverUrl, requestBody);
+                        }
+                    } catch (error) {
+                        this.response = { error: error.message };
+                        this.responseStatus = 'error';
+                    } finally {
+                        this.isSending = false;
+                    }
+                },
+                async sendHttpRequest(url, body) {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(body)
+                    });
+                    
+                    const data = await response.json();
+                    this.response = data;
+                    this.responseStatus = response.ok && (data.code === 0 || data.code === 200) ? 'success' : 'error';
+                    // 保存到历史记录
+                    this.saveToHistory(body.action, body.params, url);
+                    // 自动打开响应模态框
+                    this.showResponseModal = true;
+                },
+                async sendWebSocketRequest(url, body) {
+                    return new Promise((resolve, reject) => {
+                        const ws = new WebSocket(url);
+                        let hasReceivedResponse = false;
+                        let messageCount = 0;
+                        const maxMessages = 10; // 最多处理 10 条消息
+                        
+                        ws.onopen = () => {
+                            ws.send(JSON.stringify(body));
+                        };
+                        
+                        ws.onmessage = (event) => {
+                            try {
+                                const data = JSON.parse(event.data);
+                                messageCount++;
+                                
+                                // 检查是否是错误响应
+                                if (data.code !== undefined && data.code !== 0 && data.code !== 200) {
+                                    // 错误响应
+                                    this.response = data;
+                                    this.responseStatus = 'error';
+                                    hasReceivedResponse = true;
+                                    // 保存到历史记录（即使是错误也保存）
+                                    this.saveToHistory(body.action, body.params, url);
+                                    console.warn('收到错误响应:', data);
+                                    // 不立即关闭，可能还有后续消息，但标记为已收到响应
+                                    // 如果这是第一条消息或者是明确的错误，可以关闭连接
+                                    if (messageCount === 1 || data.action === body.action) {
+                                        ws.close();
+                                        resolve(); // 即使错误也 resolve，让 UI 显示错误信息
+                                    }
+                                    return;
+                                }
+                                
+                                // 成功响应或普通消息
+                                this.response = data;
+                                this.responseStatus = (data.code === 0 || data.code === 200) ? 'success' : 'error';
+                                hasReceivedResponse = true;
+                                // 保存到历史记录
+                                this.saveToHistory(body.action, body.params, url);
+                                // 自动打开响应模态框
+                                this.showResponseModal = true;
+                                
+                                // 如果收到成功响应且 action 匹配，关闭连接
+                                if (data.action === body.action && (data.code === 0 || data.code === 200)) {
+                                    ws.close();
+                                    resolve();
+                                    return;
+                                }
+                                
+                                // 如果收到太多消息，关闭连接
+                                if (messageCount >= maxMessages) {
+                                    console.warn('收到过多消息，关闭连接');
+                                    ws.close();
+                                    resolve();
+                                }
+                            } catch (e) {
+                                this.response = { error: '解析响应失败: ' + e.message, raw: event.data };
+                                this.responseStatus = 'error';
+                                hasReceivedResponse = true;
+                                // 自动打开响应模态框
+                                this.showResponseModal = true;
+                                ws.close();
+                                reject(e);
+                            }
+                        };
+                        
+                        ws.onerror = (error) => {
+                            console.error('WebSocket 错误:', error);
+                            this.response = { error: 'WebSocket 连接错误，请检查服务器地址和网络连接' };
+                            this.responseStatus = 'error';
+                            if (!hasReceivedResponse) {
+                                reject(error);
+                            }
+                        };
+                        
+                        ws.onclose = (event) => {
+                            if (!hasReceivedResponse) {
+                                // 如果连接关闭但没有收到任何响应
+                                if (event.code !== 1000) { // 1000 是正常关闭
+                                    this.response = { 
+                                        error: `WebSocket 连接异常关闭 (代码: ${event.code})`,
+                                        code: event.code,
+                                        reason: event.reason || '未知原因'
+                                    };
+                                } else {
+                                    this.response = { error: 'WebSocket 连接已关闭，未收到响应' };
+                                }
+                                this.responseStatus = 'error';
+                                reject(new Error('Connection closed without response'));
+                            }
+                        };
+                        
+                        // 设置超时
+                        setTimeout(() => {
+                            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                                ws.close();
+                                if (!hasReceivedResponse) {
+                                    this.response = { error: '请求超时（30秒）' };
+                                    this.responseStatus = 'error';
+                                    reject(new Error('Timeout'));
+                                }
+                            }
+                        }, 30000);
+                    });
+                },
+                loadSavedServers() {
+                    try {
+                        const saved = localStorage.getItem('savedServers');
+                        if (saved) {
+                            this.savedServers = JSON.parse(saved);
+                        }
+                    } catch (e) {
+                        console.error('加载已保存的服务器失败:', e);
+                        this.savedServers = [];
+                    }
+                },
+                saveServersToStorage() {
+                    try {
+                        localStorage.setItem('savedServers', JSON.stringify(this.savedServers));
+                    } catch (e) {
+                        console.error('保存服务器列表失败:', e);
+                    }
+                },
+                parseUrl(url) {
+                    try {
+                        // 支持 ws://, wss://, http://, https://
+                        const urlObj = new URL(url);
+                        const protocol = urlObj.protocol.replace(':', '');
+                        let host = urlObj.hostname;
+                        let port = urlObj.port;
+                        const path = urlObj.pathname;
+                        
+                        // 如果没有端口，设置默认端口
+                        if (!port) {
+                            if (protocol === 'ws' || protocol === 'http') {
+                                port = '80';
+                            } else if (protocol === 'wss' || protocol === 'https') {
+                                port = '443';
+                            }
+                        }
+                        
+                        return {
+                            protocol: protocol,
+                            host: host,
+                            port: port,
+                            path: path || '/'
+                        };
+                    } catch (e) {
+                        console.error('URL 解析失败:', e);
+                        return null;
+                    }
+                },
+                saveServer() {
+                    if (!this.serverUrl || !this.serverUrl.trim()) {
+                        return;
+                    }
+                    
+                    const url = this.serverUrl.trim();
+                    const parsed = this.parseUrl(url);
+                    
+                    if (!parsed) {
+                        alert('服务器地址格式错误，无法解析');
+                        return;
+                    }
+                    
+                    // 根据 IP、端口、端点判断是否相同
+                    const existingIndex = this.savedServers.findIndex(s => {
+                        const sParsed = this.parseUrl(s.url);
+                        if (!sParsed) return false;
+                        return sParsed.host === parsed.host && 
+                               sParsed.port === parsed.port && 
+                               sParsed.path === parsed.path;
+                    });
+                    
+                    if (existingIndex !== -1) {
+                        // 如果已存在，更新现有记录（保留名称）
+                        const existing = this.savedServers[existingIndex];
+                        existing.url = url; // 更新 URL（可能协议不同）
+                        this.saveServersToStorage();
+                        console.log('服务器地址已更新:', url);
+                    } else {
+                        // 如果不存在，插入新记录
+                        const id = Date.now().toString();
+                        this.savedServers.push({
+                            id: id,
+                            url: url,
+                            name: '' // 默认无名称，显示地址
+                        });
+                        
+                        // 保存到 localStorage
+                        this.saveServersToStorage();
+                        console.log('服务器地址已保存:', url);
+                    }
+                },
+                selectServer(url) {
+                    this.serverUrl = url;
+                },
+                deleteServer(id) {
+                    if (confirm('确定要删除这个服务器地址吗？')) {
+                        // 先检查要删除的服务器是否是当前选中的
+                        const server = this.savedServers.find(s => s.id === id);
+                        const wasCurrent = server && this.serverUrl === server.url;
+                        
+                        // 删除服务器
+                        this.savedServers = this.savedServers.filter(s => s.id !== id);
+                        this.saveServersToStorage();
+                        
+                        // 如果删除的是当前选中的服务器，清空输入框
+                        if (wasCurrent) {
+                            this.serverUrl = '';
+                        }
+                    }
+                },
+                startEditServerName(server) {
+                    this.editingServerId = server.id;
+                    this.editingServerName = server.name || '';
+                },
+                cancelEditServerName() {
+                    this.editingServerId = null;
+                    this.editingServerName = '';
+                },
+                saveServerName() {
+                    if (this.editingServerId) {
+                        const server = this.savedServers.find(s => s.id === this.editingServerId);
+                        if (server) {
+                            server.name = this.editingServerName.trim();
+                            this.saveServersToStorage();
+                        }
+                        this.cancelEditServerName();
+                    }
+                },
+                closeResponseModal() {
+                    this.showResponseModal = false;
+                },
+                async copyResponse(event) {
+                    try {
+                        const jsonText = this.formattedResponse;
+                        await navigator.clipboard.writeText(jsonText);
+                        // 显示成功提示
+                        const button = event.target.closest('button');
+                        if (button) {
+                            const originalText = button.innerHTML;
+                            button.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> 已复制';
+                            button.classList.add('bg-green-600', 'hover:bg-green-700');
+                            button.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                            setTimeout(() => {
+                                button.innerHTML = originalText;
+                                button.classList.remove('bg-green-600', 'hover:bg-green-700');
+                                button.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                            }, 2000);
+                        }
+                    } catch (err) {
+                        console.error('复制失败:', err);
+                        alert('复制失败，请手动选择文本复制');
+                    }
+                },
+                async switchDocument() {
+                    // 切换文档：currentDocName 已经通过 v-model 更新
+                    console.log('切换文档到:', this.currentDocName);
+                    this.loadError = null; // 清除之前的错误
+                    
+                    if (!this.currentDocName) {
+                        const errorMsg = '文档名称为空，无法切换文档';
+                        console.error(errorMsg);
+                        this.loadError = errorMsg;
+                        return;
+                    }
+                    
+                    // 检查文档是否存在
+                    const docExists = this.availableDocs.some(doc => doc.name === this.currentDocName);
+                    if (!docExists) {
+                        const errorMsg = `文档 "${this.currentDocName}" 不存在。可用的文档: ${this.availableDocs.map(d => d.name).join(', ') || '无'}`;
+                        console.error('文档不存在:', this.currentDocName);
+                        console.log('可用的文档:', this.availableDocs.map(d => d.name));
+                        this.loadError = errorMsg;
+                        this.docData = null; // 清除旧数据
+                        return;
+                    }
+                    
+                    // 加载文档
+                    await this.loadDocument();
+                },
+                buildPrefixTree() {
+                    if (!this.docData || !this.docData.files) {
+                        this.prefixTree = {};
+                        this.allActions = [];
+                        return;
+                    }
+                    
+                    const tree = { children: {}, actions: [] };
+                    const actions = [];
+                    
+                    // 遍历所有文件、中间件组、分类和 action
+                    this.docData.files.forEach(file => {
+                        file.middlewareGroups.forEach(group => {
+                            group.categories.forEach(category => {
+                                category.actions.forEach(action => {
+                                    const actionName = action.name;
+                                    const parts = actionName.split('.');
+                                    
+                                    // 收集所有 action
+                                    actions.push(action);
+                                    
+                                    // 构建前缀树
+                                    let current = tree;
+                                    let currentPath = '';
+                                    
+                                    parts.forEach((part, index) => {
+                                        if (!current.children[part]) {
+                                            current.children[part] = { children: {}, actions: [] };
+                                        }
+                                        current = current.children[part];
+                                        currentPath = currentPath ? currentPath + '.' + part : part;
+                                        
+                                        // 将 action 添加到当前节点
+                                        if (!current.actions.includes(actionName)) {
+                                            current.actions.push(actionName);
+                                        }
+                                    });
+                                });
+                            });
+                        });
+                    });
+                    
+                    this.prefixTree = tree;
+                    this.allActions = actions;
+                    console.log('前缀树构建完成，共', actions.length, '个 action');
+                },
+                selectPrefix(prefix) {
+                    if (this.selectedPrefix === prefix) {
+                        // 如果点击已选中的前缀，取消选择
+                        this.selectedPrefix = null;
+                    } else {
+                        this.selectedPrefix = prefix;
+                    }
+                },
+                togglePrefix(prefix) {
+                    this.expandedPrefixes[prefix] = !this.expandedPrefixes[prefix];
+                },
+                renderPrefixTree(node, prefix = '') {
+                    // 递归渲染前缀树
+                    const result = [];
+                    const keys = Object.keys(node.children || {}).sort();
+                    
+                    keys.forEach(key => {
+                        const fullPrefix = prefix ? prefix + '.' + key : key;
+                        const childNode = node.children[key];
+                        const hasChildren = Object.keys(childNode.children || {}).length > 0;
+                        
+                        result.push({
+                            prefix: fullPrefix,
+                            key: key,
+                            actions: childNode.actions || [],
+                            hasChildren: hasChildren,
+                            children: hasChildren ? this.renderPrefixTree(childNode, fullPrefix) : []
+                        });
+                    });
+                    
+                    return result;
+                },
+                saveToHistory(action, params, serverUrl) {
+                    if (!action) return;
+                    
+                    // 序列化参数用于比较
+                    const paramsStr = JSON.stringify(params || {});
+                    
+                    // 检查历史记录中是否已存在相同的 action 和参数
+                    const existingIndex = this.requestHistory.findIndex(h => {
+                        return h.action === action && JSON.stringify(h.params || {}) === paramsStr;
+                    });
+                    
+                    const historyItem = {
+                        id: Date.now().toString(),
+                        action: action,
+                        params: params || {},
+                        serverUrl: serverUrl || this.serverUrl,
+                        timestamp: Date.now()
+                    };
+                    
+                    if (existingIndex !== -1) {
+                        // 如果已存在，更新该记录的时间戳
+                        this.requestHistory[existingIndex] = historyItem;
+                    } else {
+                        // 如果不存在，插入新记录
+                        this.requestHistory.unshift(historyItem);
+                        
+                        // 最多保存30组数据
+                        if (this.requestHistory.length > 30) {
+                            this.requestHistory = this.requestHistory.slice(0, 30);
+                        }
+                    }
+                    
+                    // 保存到 localStorage
+                    this.saveHistoryToStorage();
+                },
+                loadFromHistory() {
+                    try {
+                        const saved = localStorage.getItem('requestHistory');
+                        if (saved) {
+                            this.requestHistory = JSON.parse(saved);
+                            // 确保不超过30条
+                            if (this.requestHistory.length > 30) {
+                                this.requestHistory = this.requestHistory.slice(0, 30);
+                                this.saveHistoryToStorage();
+                            }
+                        }
+                    } catch (e) {
+                        console.error('加载历史记录失败:', e);
+                        this.requestHistory = [];
+                    }
+                },
+                saveHistoryToStorage() {
+                    try {
+                        localStorage.setItem('requestHistory', JSON.stringify(this.requestHistory));
+                    } catch (e) {
+                        console.error('保存历史记录失败:', e);
+                    }
+                },
+                applyHistory(historyItem) {
+                    // 应用历史记录到表单
+                    if (historyItem.serverUrl) {
+                        this.serverUrl = historyItem.serverUrl;
+                    }
+                    
+                    // 查找对应的 action
+                    if (this.docData && this.docData.files) {
+                        let foundAction = null;
+                        for (const file of this.docData.files) {
+                            for (const group of file.middlewareGroups) {
+                                for (const category of group.categories) {
+                                    foundAction = category.actions.find(a => a.name === historyItem.action);
+                                    if (foundAction) break;
+                                }
+                                if (foundAction) break;
+                            }
+                            if (foundAction) break;
+                        }
+                        
+                        if (foundAction) {
+                            this.selectAction(foundAction);
+                            // 填充参数
+                            if (historyItem.params) {
+                                Object.keys(historyItem.params).forEach(key => {
+                                    this.formData[key] = historyItem.params[key];
+                                });
+                            }
+                        } else {
+                            alert('找不到对应的 action: ' + historyItem.action);
+                        }
+                    }
+                },
+                deleteHistory(id) {
+                    this.requestHistory = this.requestHistory.filter(h => h.id !== id);
+                    this.saveHistoryToStorage();
+                },
+                clearHistory() {
+                    if (confirm('确定要清空所有历史记录吗？')) {
+                        this.requestHistory = [];
+                        this.saveHistoryToStorage();
+                    }
+                },
+                getFilteredHistory() {
+                    if (!this.historyFilter) {
+                        return this.requestHistory;
+                    }
+                    const filter = this.historyFilter.toLowerCase();
+                    return this.requestHistory.filter(h => {
+                        return h.action.toLowerCase().includes(filter) ||
+                               JSON.stringify(h.params).toLowerCase().includes(filter);
+                    });
+                },
+                onSearchInput() {
+                    if (!this.searchQuery || !this.searchQuery.trim()) {
+                        this.searchMatchedActions = null;
+                        // 不清理展开状态，保留用户操作
+                        return;
+                    }
+                    
+                    const query = this.searchQuery.trim().toLowerCase();
+                    const matchedSet = new Set();
+                    
+                    // 使用前缀树进行搜索，收集匹配的 action 名称
+                    const searchInTree = (node, queryParts, matchedPrefix = '') => {
+                        if (queryParts.length === 0) {
+                            // 查询已完成，收集所有子节点下的 actions
+                            const collectActions = (n) => {
+                                if (n.actions && n.actions.length > 0) {
+                                    n.actions.forEach(actionName => matchedSet.add(actionName));
+                                }
+                                if (n.children) {
+                                    Object.keys(n.children).forEach(key => collectActions(n.children[key]));
+                                }
+                            };
+                            collectActions(node);
+                            return;
+                        }
+                        
+                        const firstPart = queryParts[0];
+                        const remainingParts = queryParts.slice(1);
+                        
+                        // 精确匹配
+                        if (node.children && node.children[firstPart]) {
+                            searchInTree(node.children[firstPart], remainingParts, matchedPrefix ? matchedPrefix + '.' + firstPart : firstPart);
+                        }
+                        
+                        // 模糊匹配当前节点的 actions
+                        if (node.actions && node.actions.length > 0) {
+                            node.actions.forEach(actionName => {
+                                if (actionName.toLowerCase().startsWith(query)) {
+                                    matchedSet.add(actionName);
+                                }
+                            });
+                        }
+                    };
+                    
+                    const queryParts = query.split('.');
+                    searchInTree(this.prefixTree, queryParts, '');
+                    
+                    // 如果前缀树搜索没有结果，进行模糊搜索
+                    if (matchedSet.size === 0) {
+                        this.allActions.forEach(action => {
+                            if (action.name.toLowerCase().includes(query)) {
+                                matchedSet.add(action.name);
+                            }
+                        });
+                    }
+                    
+                    this.searchMatchedActions = matchedSet.size > 0 ? matchedSet : null;
+                    
+                    // 自动展开左侧树，显示匹配项
+                    this.expandForMatches(this.searchMatchedActions);
+                },
+                expandForMatches(matchedSet) {
+                    if (!matchedSet || !this.docData || !this.docData.files) return;
+                    
+                    this.docData.files.forEach(file => {
+                        file.middlewareGroups.forEach(group => {
+                            let groupHasMatch = false;
+                            group.categories.forEach(category => {
+                                const categoryHasMatch = category.actions.some(a => matchedSet.has(a.name));
+                                if (categoryHasMatch) {
+                                    this.expandedCategories[`${group.name}-${category.name}`] = true;
+                                    groupHasMatch = true;
+                                }
+                            });
+                            if (groupHasMatch) {
+                                this.expandedGroups[group.name] = true;
+                            }
+                        });
+                    });
+                },
+                clearSearch() {
+                    this.searchQuery = '';
+                    this.searchMatchedActions = null;
+                }
+            }
+                    }).mount('#app');
+                    
+                    console.log('Vue 应用初始化成功');
+                } catch (error) {
+                    console.error('Vue 应用初始化失败:', error);
+                    const app = document.getElementById('app');
+                    if (app) {
+                        app.innerHTML = '<div class="p-8 text-center text-red-600"><p>错误：Vue 应用初始化失败</p><p class="text-sm mt-2">' + error.message + '</p></div>';
+                    }
+                }
+            }
+
+            // 如果 Vue 已经加载，直接初始化
+            if (typeof Vue !== 'undefined') {
+                initVue();
+            } else {
+                // 等待 Vue 库加载，最多等待 5 秒
+                let attempts = 0;
+                const maxAttempts = 50; // 5秒 = 50 * 100ms
+                const checkVue = setInterval(function() {
+                    attempts++;
+                    if (typeof Vue !== 'undefined') {
+                        clearInterval(checkVue);
+                        initVue();
+                    } else if (attempts >= maxAttempts) {
+                        clearInterval(checkVue);
+                        console.error('Vue 库加载超时');
+                        const app = document.getElementById('app');
+                        if (app) {
+                            app.innerHTML = '<div class="p-8 text-center text-red-600"><p>错误：Vue 库加载超时，请检查网络连接</p></div>';
+                        }
+                    }
+                }, 100);
+            }
+        });
+    </script>
+</body>
+</html>

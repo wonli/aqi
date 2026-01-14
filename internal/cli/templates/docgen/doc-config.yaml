@@ -1,0 +1,26 @@
+# 文档配置文件
+# 用于定义 WebSocket Action 的分类规则和项目元数据
+# 
+# 注意：categoryMap 中的值已自动设置为键值，请根据需要修改为合适的中文分类名称
+
+metadata:
+    projectName: "API 文档"
+    version: "1.0.0"
+    description: "WebSocket API 文档"
+    author: ""
+    contact: ""
+
+appDocuments: []
+
+categoryMap: {}
+
+middlewareGroup:
+    middlewareMap: {}
+    defaultTemplate: "%s"
+    noMiddleware: "默认"
+
+auth:
+    enabled: false
+    username: "admin"
+    password: "admin"
+    realm: "API 文档"

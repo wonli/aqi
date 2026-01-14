@@ -1,0 +1,152 @@
+package docs
+
+import (
+	"encoding/base64"
+	"embed"
+	"io/fs"
+	"net/http"
+	"path"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+//go:embed api_viewer.html *.json doc-config.yaml
+var docsFS embed.FS
+
+// authConfig 身份认证配置
+type authConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	Realm    string `yaml:"realm"`
+}
+
+// loadAuthConfig 从 embed.FS 加载认证配置
+func loadAuthConfig() (*authConfig, error) {
+	configData, err := docsFS.ReadFile("doc-config.yaml")
+	if err != nil {
+		return nil, err
+	}
+
+	var config struct {
+		Auth authConfig `yaml:"auth"`
+	}
+	if err := yaml.Unmarshal(configData, &config); err != nil {
+		return nil, err
+	}
+
+	return &config.Auth, nil
+}
+
+// basicAuthMiddleware 实现 Basic Auth 认证中间件
+func basicAuthMiddleware(handler http.Handler, auth *authConfig) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 如果未启用认证，直接通过
+		if !auth.Enabled {
+			handler.ServeHTTP(w, r)
+			return
+		}
+
+		// 获取 Authorization 头
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="`+auth.Realm+`"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte("Unauthorized.\n"))
+			return
+		}
+
+		// 解析 Basic Auth
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || strings.ToLower(parts[0]) != "basic" {
+			http.Error(w, "Invalid Authorization Header format", http.StatusUnauthorized)
+			return
+		}
+
+		// 解码 base64
+		payload, err := base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			http.Error(w, "Invalid Authorization Header format", http.StatusUnauthorized)
+			return
+		}
+
+		// 解析用户名和密码
+		pair := strings.SplitN(string(payload), ":", 2)
+		if len(pair) != 2 {
+			http.Error(w, "Invalid Authorization Header format", http.StatusUnauthorized)
+			return
+		}
+
+		username, password := pair[0], pair[1]
+
+		// 验证用户名和密码
+		if username != auth.Username || password != auth.Password {
+			w.Header().Set("WWW-Authenticate", `Basic realm="`+auth.Realm+`"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte("Unauthorized.\n"))
+			return
+		}
+
+		// 认证通过，继续处理请求
+		handler.ServeHTTP(w, r)
+	})
+}
+
+// Handler 返回文档查看的http.Handler，类似swagger的swaggerFiles.Handler
+// Handler会自动处理路径前缀，用户无需手动使用http.StripPrefix
+// 如果配置文件中启用了身份认证，Handler 会自动应用 Basic Auth
+// 使用示例：
+//   - Gin: router.GET("/api/docs/*any", gin.WrapH(docs.Handler()))
+//   - Chi: r.Get("/api/docs/*", docs.Handler().ServeHTTP)
+//   - net/http: http.Handle("/api/docs/", docs.Handler())
+func Handler() http.Handler {
+	// 获取 embed.FS 的子文件系统
+	fsys, err := fs.Sub(docsFS, ".")
+	if err != nil {
+		panic(err)
+	}
+
+	fileServer := http.FileServer(http.FS(fsys))
+
+	// 加载认证配置
+	auth, err := loadAuthConfig()
+	if err != nil {
+		// 如果加载配置失败，使用默认配置（不启用认证）
+		auth = &authConfig{Enabled: false}
+	}
+
+	// 包装文件服务器，自动处理路径前缀，阻止目录列表
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 提取文件名部分（自动去掉路径前缀）
+		fileName := path.Base(r.URL.Path)
+		
+		// 如果是根路径、空路径或目录，返回 api_viewer.html
+		if fileName == "" || fileName == "/" || fileName == "." {
+			r.URL.Path = "/api_viewer.html"
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// 检查是否是目录
+		requestPath := path.Clean(r.URL.Path)
+		f, err := fsys.Open(requestPath)
+		if err == nil {
+			defer f.Close()
+			stat, err := f.Stat()
+			if err == nil && stat.IsDir() {
+				// 如果是目录，返回 api_viewer.html
+				r.URL.Path = "/api_viewer.html"
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		// 将路径设置为文件名（去掉前缀）
+		r.URL.Path = "/" + fileName
+		fileServer.ServeHTTP(w, r)
+	})
+
+	// 应用 Basic Auth 中间件
+	return basicAuthMiddleware(handler, auth)
+}
