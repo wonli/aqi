@@ -379,10 +379,8 @@ func formatErrorCodes(errorCodes []ErrorCode) string {
 // getExampleValue 获取示例值
 func getExampleValue(typ string) string {
 	switch typ {
-	case "string":
-		return "\"example\""
 	case "int", "uint", "int32", "uint32", "int64", "uint64":
-		return "1"
+		return "0"
 	case "bool":
 		return "true"
 	case "[]string":
@@ -554,10 +552,28 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string, changelog *Change
 					authReq := getAuthRequirement(action)
 
 					// 构建示例（直接作为对象输出）
+					// 将点号分隔的字段名转换为嵌套对象
 					params := make(map[string]interface{})
 					for _, p := range action.Params {
 						if p.Required {
-							params[p.Name] = getJSONExampleValue(p.Type)
+							// 检查参数名是否包含点号（如 "page.current"）
+							if strings.Contains(p.Name, ".") {
+								parts := strings.SplitN(p.Name, ".", 2)
+								parentKey := parts[0]
+								childKey := parts[1]
+
+								// 如果父键不存在，创建嵌套对象
+								if _, exists := params[parentKey]; !exists {
+									params[parentKey] = make(map[string]interface{})
+								}
+								// 将子字段添加到嵌套对象中
+								if parentObj, ok := params[parentKey].(map[string]interface{}); ok {
+									parentObj[childKey] = getJSONExampleValue(p.Type)
+								}
+							} else {
+								// 普通字段，直接添加
+								params[p.Name] = getJSONExampleValue(p.Type)
+							}
 						}
 					}
 
@@ -734,10 +750,8 @@ func GenerateGlobalChangelog(snapshotDir string, allRouterFiles []RouterFile) (*
 // getJSONExampleValue 获取 JSON 示例值（返回 interface{}）
 func getJSONExampleValue(typ string) interface{} {
 	switch typ {
-	case "string":
-		return "example"
 	case "int", "uint", "int32", "uint32", "int64", "uint64":
-		return 1
+		return 0
 	case "bool":
 		return true
 	case "[]string":

@@ -44,11 +44,37 @@
 
     <div id="app" v-cloak>
         <!-- 顶部文档切换器 -->
-        <div v-if="availableDocs.length > 1" class="bg-white border-b border-gray-200 px-4 py-2">
-            <select v-model="currentDocName" @change="switchDocument" 
-                    class="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option v-for="doc in availableDocs" :key="doc.name" :value="doc.name">{{ doc.label }}</option>
-            </select>
+        <div v-if="availableDocs.length > 1" class="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2">
+            <!-- 菜单展开按钮（小屏幕显示，菜单关闭时） -->
+            <button v-if="!menuOpen" 
+                    @click="menuOpen = true"
+                    class="md:hidden px-2 py-1 bg-white border border-gray-300 rounded-md shadow-md hover:bg-gray-50 flex items-center justify-center">
+                <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+            <!-- 菜单关闭按钮（小屏幕显示，菜单打开时） -->
+            <button v-if="menuOpen" 
+                    @click="menuOpen = false"
+                    class="md:hidden px-2 py-1 bg-white border border-gray-300 rounded-md shadow-md hover:bg-gray-50 flex items-center justify-center">
+                <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+            <!-- 文档切换按钮组 -->
+            <div class="flex items-center gap-1 flex-wrap">
+                <button v-for="doc in availableDocs" 
+                        :key="doc.name"
+                        @click="switchToDocument(doc.name)"
+                        :class="[
+                            'px-3 py-1 text-sm border rounded-md transition-colors',
+                            currentDocName === doc.name
+                                ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        ]">
+                    {{ doc.label }}
+                </button>
+            </div>
         </div>
 
         <div class="flex h-screen relative" style="height: calc(100vh - 40px);">
@@ -56,14 +82,6 @@
             <div v-if="menuOpen" 
                  @click.stop="menuOpen = false"
                  class="md:hidden fixed inset-0 bg-black bg-opacity-50 z-20"></div>
-            <!-- 菜单切换按钮（小屏幕显示） -->
-            <button v-if="!menuOpen" 
-                    @click="menuOpen = true"
-                    class="md:hidden fixed top-2 left-2 z-40 p-2 bg-white border border-gray-300 rounded-md shadow-md hover:bg-gray-50">
-                <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-                </svg>
-            </button>
             
             <!-- 左侧树形菜单 -->
             <div :class="[
@@ -196,6 +214,24 @@
                     </div>
                 </div>
                 
+                <!-- 历史记录标签（搜索栏下方） -->
+                <div v-if="getRecentHistoryActions().length > 0" class="px-6 pb-4 max-w-4xl mx-auto">
+                    <div class="flex flex-wrap gap-2">
+                        <button v-for="item in getRecentHistoryActions()"
+                                :key="item.id"
+                                @click="applyHistory(item)"
+                                class="px-3 py-1.5 text-xs bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 rounded-md transition-colors flex items-center gap-1.5 font-mono">
+                            <span v-if="item.pinned"
+                                  class="flex-shrink-0 text-yellow-600">
+                                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                                </svg>
+                            </span>
+                            <span>{{ item.action }}</span>
+                        </button>
+                    </div>
+                </div>
+                
                 <div v-if="selectedAction" class="p-6 max-w-4xl mx-auto">
                     <!-- 文档基础信息 -->
                     <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
@@ -278,45 +314,6 @@
                             </div>
                         </div>
                     </div>
-                    
-                    <!-- 历史记录 -->
-                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-lg font-semibold text-gray-900">历史记录</h2>
-                            <div class="flex gap-2">
-                                <input v-model="historyFilter"
-                                       type="text"
-                                       placeholder="搜索历史记录..."
-                                       class="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <button v-if="requestHistory.length > 0"
-                                        @click="clearHistory"
-                                        class="px-3 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded">
-                                    清空
-                                </button>
-                            </div>
-                        </div>
-                        <div v-if="getFilteredHistory().length > 0" class="flex flex-wrap gap-2">
-                            <div v-for="item in getFilteredHistory()" 
-                                 :key="item.id"
-                                 class="group relative">
-                                <button @click="applyHistory(item)"
-                                        class="px-3 py-2 bg-gray-100 hover:bg-blue-100 text-sm text-gray-700 hover:text-blue-700 rounded-md transition-colors flex items-center gap-2">
-                                    <span class="font-mono text-xs">{{ item.action }}</span>
-                                    <span class="text-xs text-gray-500">({{ new Date(item.timestamp).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }})</span>
-                                    <button @click.stop="deleteHistory(item.id)"
-                                            class="opacity-0 group-hover:opacity-100 ml-1 text-red-500 hover:text-red-700 text-xs">
-                                        ×
-                                    </button>
-                                </button>
-                            </div>
-                        </div>
-                        <div v-else class="text-gray-500 text-sm">
-                            <span v-if="historyFilter">未找到匹配的历史记录</span>
-                            <span v-else>暂无历史记录</span>
-                        </div>
-                    </div>
-                    
-                    
                     
                     <!-- 重命名服务器对话框 -->
                     <div v-if="editingServerId" 
@@ -419,6 +416,87 @@
                         </div>
                     </div>
 
+                    <!-- 参数表单 -->
+                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-semibold text-gray-900">请求参数</h2>
+                            <div class="flex items-center gap-2">
+                                <button v-if="selectedAction.params && selectedAction.params.length > 0"
+                                        @click="toggleParamsEditMode"
+                                        class="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 border border-blue-300 rounded-md hover:bg-blue-50">
+                                    {{ paramsEditMode === 'form' ? '切换到 JSON 编辑' : '切换到表单编辑' }}
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- 表单模式 -->
+                        <div v-if="paramsEditMode === 'form'">
+                            <div v-if="selectedAction.params && selectedAction.params.length > 0" class="space-y-4">
+                                <div v-for="param in selectedAction.params" :key="param.Name" class="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        {{ param.Name }}
+                                        <span v-if="param.Required" class="text-red-500 ml-1">*</span>
+                                        <span class="text-gray-400 text-xs ml-2">({{ param.Type }})</span>
+                                    </label>
+                                    <input v-if="param.Type === 'string' || param.Type === 'int' || param.Type === 'float'"
+                                           v-model="formData[param.Name]"
+                                           :type="param.Type === 'int' || param.Type === 'float' ? 'number' : 'text'"
+                                           :placeholder="getPlaceholder(param)"
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <input v-else-if="param.Type === 'bool'"
+                                           type="checkbox"
+                                           v-model="formData[param.Name]"
+                                           class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                    <textarea v-else
+                                              v-model="formData[param.Name]"
+                                              :placeholder="getPlaceholder(param)"
+                                              rows="3"
+                                              class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                                    <p v-if="param.Description" class="text-xs text-gray-500 mt-1">{{ param.Description }}</p>
+                                    <button v-if="selectedAction.example && selectedAction.example.request && selectedAction.example.request.params[param.Name] !== undefined"
+                                            @click="fillExampleValue(param.Name)"
+                                            class="mt-1 text-xs text-blue-600 hover:text-blue-800">
+                                        使用示例值: {{ JSON.stringify(selectedAction.example.request.params[param.Name]) }}
+                                    </button>
+                                </div>
+                            </div>
+                            <div v-else class="text-gray-500 text-sm">此接口无需参数</div>
+                        </div>
+                        
+                        <!-- JSON 编辑模式 -->
+                        <div v-else>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">直接编辑 JSON 格式的 params 对象：</label>
+                                <textarea v-model="jsonParamsText"
+                                          @blur="parseJsonParams"
+                                          placeholder='{"page": {"current": 1, "pageSize": 10}}'
+                                          rows="8"
+                                          class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"></textarea>
+                                <p v-if="jsonParamsError" class="text-xs text-red-500 mt-1">{{ jsonParamsError }}</p>
+                                <p class="text-xs text-gray-500 mt-1">提示：可以直接粘贴 JSON 格式的 params 对象</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 请求预览 -->
+                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-4">请求预览</h2>
+                        <pre class="bg-gray-50 p-4 rounded-md overflow-x-auto text-xs"><code>{{ requestPreview }}</code></pre>
+                    </div>
+
+                    <!-- 错误码说明 -->
+                    <div v-if="selectedAction.errorCodes && selectedAction.errorCodes.length > 0" 
+                         class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-4">错误码</h2>
+                        <div class="space-y-2">
+                            <div v-for="error in selectedAction.errorCodes" :key="error.Code" 
+                                 class="flex items-center gap-4 text-sm">
+                                <span class="font-mono text-red-600 w-20">{{ error.Code }}</span>
+                                <span class="text-gray-700">{{ error.Message }}</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Action 详细信息 -->
                     <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
                         <h2 class="text-lg font-semibold text-gray-900 mb-4">接口信息</h2>
@@ -439,60 +517,6 @@
                                 <span class="text-gray-500">返回类型:</span>
                                 <span class="ml-2 text-gray-900">{{ selectedAction.returns.successType || 'N/A' }}</span>
                                 <span class="ml-2 text-gray-500">({{ selectedAction.returns.hasData ? '有数据' : '无数据' }})</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 参数表单 -->
-                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-                        <h2 class="text-lg font-semibold text-gray-900 mb-4">请求参数</h2>
-                        <div v-if="selectedAction.params && selectedAction.params.length > 0" class="space-y-4">
-                            <div v-for="param in selectedAction.params" :key="param.Name" class="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">
-                                    {{ param.Name }}
-                                    <span v-if="param.Required" class="text-red-500 ml-1">*</span>
-                                    <span class="text-gray-400 text-xs ml-2">({{ param.Type }})</span>
-                                </label>
-                                <input v-if="param.Type === 'string' || param.Type === 'int' || param.Type === 'float'"
-                                       v-model="formData[param.Name]"
-                                       :type="param.Type === 'int' || param.Type === 'float' ? 'number' : 'text'"
-                                       :placeholder="getPlaceholder(param)"
-                                       class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <input v-else-if="param.Type === 'bool'"
-                                       type="checkbox"
-                                       v-model="formData[param.Name]"
-                                       class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                                <textarea v-else
-                                          v-model="formData[param.Name]"
-                                          :placeholder="getPlaceholder(param)"
-                                          rows="3"
-                                          class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                                <p v-if="param.Description" class="text-xs text-gray-500 mt-1">{{ param.Description }}</p>
-                                <button v-if="selectedAction.example && selectedAction.example.request && selectedAction.example.request.params[param.Name] !== undefined"
-                                        @click="fillExampleValue(param.Name)"
-                                        class="mt-1 text-xs text-blue-600 hover:text-blue-800">
-                                    使用示例值: {{ JSON.stringify(selectedAction.example.request.params[param.Name]) }}
-                                </button>
-                            </div>
-                        </div>
-                        <div v-else class="text-gray-500 text-sm">此接口无需参数</div>
-                    </div>
-
-                    <!-- 请求预览 -->
-                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-                        <h2 class="text-lg font-semibold text-gray-900 mb-4">请求预览</h2>
-                        <pre class="bg-gray-50 p-4 rounded-md overflow-x-auto text-xs"><code>{{ requestPreview }}</code></pre>
-                    </div>
-
-                    <!-- 错误码说明 -->
-                    <div v-if="selectedAction.errorCodes && selectedAction.errorCodes.length > 0" 
-                         class="bg-white rounded-lg shadow-sm p-6 mb-6">
-                        <h2 class="text-lg font-semibold text-gray-900 mb-4">错误码</h2>
-                        <div class="space-y-2">
-                            <div v-for="error in selectedAction.errorCodes" :key="error.Code" 
-                                 class="flex items-center gap-4 text-sm">
-                                <span class="font-mono text-red-600 w-20">{{ error.Code }}</span>
-                                <span class="text-gray-700">{{ error.Message }}</span>
                             </div>
                         </div>
                     </div>
@@ -523,6 +547,55 @@
 
                 <!-- 未选择 Action 时的提示和更新日志 -->
                 <div v-else class="p-6 max-w-4xl mx-auto">
+                    <!-- 历史记录 -->
+                    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-semibold text-gray-900">历史记录</h2>
+                            <div class="flex gap-2">
+                                <input v-model="historyFilter"
+                                       type="text"
+                                       placeholder="搜索历史记录..."
+                                       class="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button v-if="requestHistory.length > 0"
+                                        @click="clearHistory"
+                                        class="px-3 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded">
+                                    清空
+                                </button>
+                            </div>
+                        </div>
+                        <div v-if="getFilteredHistory().length > 0" class="flex flex-wrap gap-2">
+                            <div v-for="item in getFilteredHistory()" 
+                                 :key="item.id"
+                                 class="flex items-center gap-2">
+                                <button @click="applyHistory(item)"
+                                        class="px-3 py-2 bg-gray-100 hover:bg-blue-100 text-sm text-gray-700 hover:text-blue-700 rounded-md transition-colors flex items-center gap-2">
+                                    <span @click.stop="pinHistory(item.id)"
+                                          :class="[
+                                              'flex-shrink-0 transition-colors cursor-pointer',
+                                              item.pinned 
+                                                  ? 'text-yellow-600 hover:text-yellow-700' 
+                                                  : 'text-gray-400 hover:text-yellow-600'
+                                          ]"
+                                          :title="item.pinned ? '取消置顶' : '置顶'">
+                                        <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                                        </svg>
+                                    </span>
+                                    <span class="font-mono text-xs">{{ item.action }}</span>
+                                    <span @click.stop="deleteHistory(item.id)"
+                                          class="flex-shrink-0 transition-colors cursor-pointer text-red-500 hover:text-red-700 ml-auto"
+                                          title="删除">
+                                        ×
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+                        <div v-else class="text-gray-500 text-sm">
+                            <span v-if="historyFilter">未找到匹配的历史记录</span>
+                            <span v-else>暂无历史记录</span>
+                        </div>
+                    </div>
+                    
                     <!-- 更新日志 -->
                     <div v-if="docData && docData.changelog" class="bg-white rounded-lg shadow-sm p-6 mb-6">
                         <h2 class="text-xl font-semibold text-gray-900 mb-4">接口更新日志</h2>
@@ -629,29 +702,90 @@
                     historyFilter: '', // 历史记录搜索过滤
                     searchQuery: '', // 搜索框输入
                     searchMatchedActions: null, // 搜索匹配的 action 集合
-                    allActions: [] // 所有 action 列表（用于搜索）
+                    allActions: [], // 所有 action 列表（用于搜索）
+                    paramsEditMode: 'json', // 参数编辑模式：'form' 或 'json'
+                    jsonParamsText: '', // JSON 编辑模式的文本内容
+                    jsonParamsError: '', // JSON 解析错误信息
+                    currentWebSocket: null, // 当前 WebSocket 连接
+                    currentWebSocketUrl: '', // 当前 WebSocket 连接的 URL
+                    wsReconnectTimer: null // WebSocket 重连定时器
                 };
             },
             computed: {
                 requestPreview() {
                     if (!this.selectedAction) return '';
                     
-                    const params = {};
-                    for (const param of this.selectedAction.params || []) {
-                        const value = this.formData[param.Name];
-                        if (value !== undefined && value !== null && value !== '') {
-                            // 类型转换
-                            if (param.Type === 'int') {
-                                params[param.Name] = parseInt(value);
-                            } else if (param.Type === 'float') {
-                                params[param.Name] = parseFloat(value);
-                            } else if (param.Type === 'bool') {
-                                params[param.Name] = Boolean(value);
-                            } else {
-                                params[param.Name] = value;
+                    let params = {};
+                    
+                    if (this.paramsEditMode === 'json') {
+                        // JSON 模式：直接使用解析后的 JSON
+                        try {
+                            if (this.jsonParamsText.trim()) {
+                                params = JSON.parse(this.jsonParamsText);
                             }
-                        } else if (param.Required) {
-                            params[param.Name] = null; // 标记必填但未填
+                        } catch (e) {
+                            // 如果 JSON 解析失败，返回错误提示
+                            return JSON.stringify({
+                                action: this.selectedAction.name,
+                                params: {},
+                                error: 'JSON 格式错误，请检查输入'
+                            }, null, 2);
+                        }
+                    } else {
+                        // 表单模式：从 formData 构建嵌套对象
+                        for (const param of this.selectedAction.params || []) {
+                            const value = this.formData[param.Name];
+                            if (value !== undefined && value !== null && value !== '') {
+                                // 检查参数名是否包含点号（如 "page.current"）
+                                if (param.Name.includes('.')) {
+                                    const parts = param.Name.split('.');
+                                    const parentKey = parts[0];
+                                    const childKey = parts.slice(1).join('.');
+                                    
+                                    // 如果父键不存在，创建嵌套对象
+                                    if (!params[parentKey]) {
+                                        params[parentKey] = {};
+                                    }
+                                    
+                                    // 类型转换
+                                    let convertedValue = value;
+                                    if (param.Type === 'int') {
+                                        convertedValue = parseInt(value);
+                                    } else if (param.Type === 'float') {
+                                        convertedValue = parseFloat(value);
+                                    } else if (param.Type === 'bool') {
+                                        convertedValue = Boolean(value);
+                                    }
+                                    
+                                    // 将子字段添加到嵌套对象中
+                                    this.setNestedValue(params[parentKey], childKey, convertedValue);
+                                } else {
+                                    // 普通字段，直接添加
+                                    let convertedValue = value;
+                                    if (param.Type === 'int') {
+                                        convertedValue = parseInt(value);
+                                    } else if (param.Type === 'float') {
+                                        convertedValue = parseFloat(value);
+                                    } else if (param.Type === 'bool') {
+                                        convertedValue = Boolean(value);
+                                    }
+                                    params[param.Name] = convertedValue;
+                                }
+                            } else if (param.Required) {
+                                // 必填但未填，根据是否有嵌套结构处理
+                                if (param.Name.includes('.')) {
+                                    const parts = param.Name.split('.');
+                                    const parentKey = parts[0];
+                                    const childKey = parts.slice(1).join('.');
+                                    
+                                    if (!params[parentKey]) {
+                                        params[parentKey] = {};
+                                    }
+                                    params[parentKey][childKey] = null;
+                                } else {
+                                    params[param.Name] = null;
+                                }
+                            }
                         }
                     }
                     
@@ -710,12 +844,12 @@
             mounted() {
                 // 启动阶段：先完成必要初始化，再显示完整页面（避免未完成时出现错误/模态框）
                 (async () => {
-                    // 从 localStorage 加载已保存的服务器地址
-                    this.loadSavedServers();
-                    // 从 localStorage 加载历史记录
-                    this.loadFromHistory();
                     // 从注入配置发现并加载文档（内部会设置 loadError）
                     await this.discoverDocuments();
+                    // 从 localStorage 加载已保存的服务器地址（需要在 discoverDocuments 之后，因为需要 currentDocName）
+                    this.loadSavedServers();
+                    // 从 localStorage 加载历史记录（需要在 discoverDocuments 之后，因为需要 currentDocName）
+                    this.loadFromHistory();
 
                     // 标记应用已就绪：隐藏 Loading，显示页面
                     document.body.classList.add('app-ready');
@@ -747,11 +881,26 @@
                         
                         console.log('发现文档:', this.availableDocs.map(d => `${d.name} (${d.label})`));
                         
-                        // 设置默认文档（优先 action，否则第一个）
+                        // 设置默认文档（优先从 localStorage 加载最后选择的文档，否则优先 action，最后选择第一个）
                         if (this.availableDocs.length > 0) {
-                            const defaultDoc = this.availableDocs.find(d => d.name === 'action') || this.availableDocs[0];
+                            // 尝试从 localStorage 加载最后选择的文档
+                            const savedDocName = localStorage.getItem('lastSelectedDoc');
+                            let defaultDoc = null;
+                            
+                            if (savedDocName) {
+                                defaultDoc = this.availableDocs.find(d => d.name === savedDocName);
+                            }
+                            
+                            // 如果保存的文档不存在，使用默认逻辑
+                            if (!defaultDoc) {
+                                defaultDoc = this.availableDocs.find(d => d.name === 'action') || this.availableDocs[0];
+                            }
+                            
                             this.currentDocName = defaultDoc.name;
                             console.log('设置默认文档为:', this.currentDocName);
+                            
+                            // 保存最后选择的文档
+                            this.saveLastSelectedDoc();
                             
                             // 加载默认文档
                             await this.loadDocument();
@@ -851,21 +1000,34 @@
                     this.formData = {};
                     this.response = null;
                     this.responseStatus = null;
+                    this.paramsEditMode = 'json'; // 重置为 JSON 模式
+                    this.jsonParamsError = ''; // 清空错误信息
                     // 小屏幕下选择 action 后自动关闭菜单
                     if (window.innerWidth < 768) {
                         this.menuOpen = false;
                     }
-                    
+
                     // 初始化表单数据，不填入默认参数
                     if (action.params) {
                         action.params.forEach(param => {
                             // 根据类型设置默认值（不填入示例值）
                             if (param.Type === 'bool') {
                                 this.formData[param.Name] = false;
+                            } else if (param.Type === 'int' || param.Type === 'uint' || param.Type === 'int32' || param.Type === 'uint32' || param.Type === 'int64' || param.Type === 'uint64') {
+                                this.formData[param.Name] = 0;
+                            } else if (param.Type === 'float' || param.Type === 'float32' || param.Type === 'float64') {
+                                this.formData[param.Name] = 0;
                             } else {
                                 this.formData[param.Name] = '';
                             }
                         });
+                    }
+                    
+                    // 如果有示例数据，自动填充到 JSON 文本框中
+                    if (action.example && action.example.request && action.example.request.params) {
+                        this.jsonParamsText = JSON.stringify(action.example.request.params, null, 2);
+                    } else {
+                        this.jsonParamsText = '{}';
                     }
                 },
                 selectActionByName(actionName) {
@@ -901,23 +1063,194 @@
                         this.formData[paramName] = value;
                     }
                 },
+                toggleParamsEditMode() {
+                    if (this.paramsEditMode === 'form') {
+                        // 切换到 JSON 模式
+                        // 如果 JSON 文本已经有内容且是有效的 JSON，保留它
+                        // 否则从表单数据构建 JSON
+                        let shouldBuildFromForm = true;
+                        if (this.jsonParamsText.trim()) {
+                            try {
+                                JSON.parse(this.jsonParamsText);
+                                // JSON 有效，保留现有内容
+                                shouldBuildFromForm = false;
+                            } catch (e) {
+                                // JSON 无效，从表单构建
+                                shouldBuildFromForm = true;
+                            }
+                        }
+                        
+                        if (shouldBuildFromForm) {
+                            const params = {};
+                            for (const param of this.selectedAction.params || []) {
+                                const value = this.formData[param.Name];
+                                if (value !== undefined && value !== null && value !== '') {
+                                    // 检查参数名是否包含点号（如 "page.current"）
+                                    if (param.Name.includes('.')) {
+                                        const parts = param.Name.split('.');
+                                        const parentKey = parts[0];
+                                        const childKey = parts.slice(1).join('.');
+                                        
+                                        if (!params[parentKey]) {
+                                            params[parentKey] = {};
+                                        }
+                                        
+                                        let convertedValue = value;
+                                        if (param.Type === 'int') {
+                                            convertedValue = parseInt(value);
+                                        } else if (param.Type === 'float') {
+                                            convertedValue = parseFloat(value);
+                                        } else if (param.Type === 'bool') {
+                                            convertedValue = Boolean(value);
+                                        }
+                                        
+                                        this.setNestedValue(params[parentKey], childKey, convertedValue);
+                                    } else {
+                                        let convertedValue = value;
+                                        if (param.Type === 'int') {
+                                            convertedValue = parseInt(value);
+                                        } else if (param.Type === 'float') {
+                                            convertedValue = parseFloat(value);
+                                        } else if (param.Type === 'bool') {
+                                            convertedValue = Boolean(value);
+                                        }
+                                        params[param.Name] = convertedValue;
+                                    }
+                                }
+                            }
+                            this.jsonParamsText = JSON.stringify(params, null, 2);
+                        }
+                        this.paramsEditMode = 'json';
+                    } else {
+                        // 切换到表单模式：从 JSON 解析并填充表单
+                        this.parseJsonParams();
+                        this.paramsEditMode = 'form';
+                    }
+                },
+                parseJsonParams() {
+                    this.jsonParamsError = '';
+                    if (!this.jsonParamsText.trim()) {
+                        // 如果 JSON 为空，初始化表单为默认值
+                        if (this.selectedAction && this.selectedAction.params) {
+                            this.selectedAction.params.forEach(param => {
+                                if (param.Type === 'bool') {
+                                    this.formData[param.Name] = false;
+                                } else if (param.Type === 'int' || param.Type === 'uint' || param.Type === 'int32' || param.Type === 'uint32' || param.Type === 'int64' || param.Type === 'uint64') {
+                                    this.formData[param.Name] = 0;
+                                } else if (param.Type === 'float' || param.Type === 'float32' || param.Type === 'float64') {
+                                    this.formData[param.Name] = 0;
+                                } else {
+                                    this.formData[param.Name] = '';
+                                }
+                            });
+                        } else {
+                            this.formData = {};
+                        }
+                        return;
+                    }
+                    
+                    try {
+                        const params = JSON.parse(this.jsonParamsText);
+                        
+                        // 将嵌套对象转换为表单数据（点号分隔的字段名）
+                        for (const param of this.selectedAction.params || []) {
+                            if (param.Name.includes('.')) {
+                                const parts = param.Name.split('.');
+                                const parentKey = parts[0];
+                                const childKey = parts.slice(1).join('.');
+                                
+                                if (params[parentKey] && typeof params[parentKey] === 'object') {
+                                    const value = this.getNestedValue(params[parentKey], childKey);
+                                    if (value !== undefined) {
+                                        this.formData[param.Name] = value;
+                                    }
+                                }
+                            } else {
+                                if (params[param.Name] !== undefined) {
+                                    this.formData[param.Name] = params[param.Name];
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        this.jsonParamsError = 'JSON 格式错误: ' + e.message;
+                    }
+                },
+                setNestedValue(obj, path, value) {
+                    const parts = path.split('.');
+                    let current = obj;
+                    for (let i = 0; i < parts.length - 1; i++) {
+                        const key = parts[i];
+                        if (!current[key] || typeof current[key] !== 'object') {
+                            current[key] = {};
+                        }
+                        current = current[key];
+                    }
+                    current[parts[parts.length - 1]] = value;
+                },
+                getNestedValue(obj, path) {
+                    const parts = path.split('.');
+                    let current = obj;
+                    for (const part of parts) {
+                        if (current === null || current === undefined || typeof current !== 'object') {
+                            return undefined;
+                        }
+                        current = current[part];
+                    }
+                    return current;
+                },
                 async sendRequest() {
                     if (!this.serverUrl || !this.selectedAction) return;
                     
                     // 构建请求参数
-                    const params = {};
-                    for (const param of this.selectedAction.params || []) {
-                        const value = this.formData[param.Name];
-                        if (value !== undefined && value !== null && value !== '') {
-                            // 类型转换
-                            if (param.Type === 'int') {
-                                params[param.Name] = parseInt(value);
-                            } else if (param.Type === 'float') {
-                                params[param.Name] = parseFloat(value);
-                            } else if (param.Type === 'bool') {
-                                params[param.Name] = Boolean(value);
-                            } else {
-                                params[param.Name] = value;
+                    let params = {};
+                    
+                    if (this.paramsEditMode === 'json') {
+                        // JSON 模式：直接使用解析后的 JSON
+                        try {
+                            if (this.jsonParamsText.trim()) {
+                                params = JSON.parse(this.jsonParamsText);
+                            }
+                        } catch (e) {
+                            this.response = { error: 'JSON 格式错误: ' + e.message };
+                            this.responseStatus = 'error';
+                            return;
+                        }
+                    } else {
+                        // 表单模式：从 formData 构建嵌套对象
+                        for (const param of this.selectedAction.params || []) {
+                            const value = this.formData[param.Name];
+                            if (value !== undefined && value !== null && value !== '') {
+                                // 检查参数名是否包含点号（如 "page.current"）
+                                if (param.Name.includes('.')) {
+                                    const parts = param.Name.split('.');
+                                    const parentKey = parts[0];
+                                    const childKey = parts.slice(1).join('.');
+                                    
+                                    if (!params[parentKey]) {
+                                        params[parentKey] = {};
+                                    }
+                                    
+                                    let convertedValue = value;
+                                    if (param.Type === 'int') {
+                                        convertedValue = parseInt(value);
+                                    } else if (param.Type === 'float') {
+                                        convertedValue = parseFloat(value);
+                                    } else if (param.Type === 'bool') {
+                                        convertedValue = Boolean(value);
+                                    }
+                                    
+                                    this.setNestedValue(params[parentKey], childKey, convertedValue);
+                                } else {
+                                    let convertedValue = value;
+                                    if (param.Type === 'int') {
+                                        convertedValue = parseInt(value);
+                                    } else if (param.Type === 'float') {
+                                        convertedValue = parseFloat(value);
+                                    } else if (param.Type === 'bool') {
+                                        convertedValue = Boolean(value);
+                                    }
+                                    params[param.Name] = convertedValue;
+                                }
                             }
                         }
                     }
@@ -966,13 +1299,36 @@
                 },
                 async sendWebSocketRequest(url, body) {
                     return new Promise((resolve, reject) => {
+                        // 检查是否已有连接且URL相同
+                        if (this.currentWebSocket && 
+                            this.currentWebSocketUrl === url && 
+                            this.currentWebSocket.readyState === WebSocket.OPEN) {
+                            // 使用现有连接发送消息
+                            this.currentWebSocket.send(JSON.stringify(body));
+                            // 保存到历史记录（消息已发送）
+                            this.saveToHistory(body.action, body.params, url);
+                            resolve();
+                            return;
+                        }
+                        
+                        // 如果已有连接但URL不同或已关闭，先关闭旧连接
+                        if (this.currentWebSocket) {
+                            this.currentWebSocket.close();
+                            this.currentWebSocket = null;
+                            this.currentWebSocketUrl = '';
+                        }
+                        
+                        // 创建新连接
                         const ws = new WebSocket(url);
+                        this.currentWebSocket = ws;
+                        this.currentWebSocketUrl = url;
                         let hasReceivedResponse = false;
                         let messageCount = 0;
                         const maxMessages = 10; // 最多处理 10 条消息
                         
                         ws.onopen = () => {
                             ws.send(JSON.stringify(body));
+                            resolve(); // 连接打开并发送消息后立即resolve，不等待响应
                         };
                         
                         ws.onmessage = (event) => {
@@ -989,12 +1345,9 @@
                                     // 保存到历史记录（即使是错误也保存）
                                     this.saveToHistory(body.action, body.params, url);
                                     console.warn('收到错误响应:', data);
-                                    // 不立即关闭，可能还有后续消息，但标记为已收到响应
-                                    // 如果这是第一条消息或者是明确的错误，可以关闭连接
-                                    if (messageCount === 1 || data.action === body.action) {
-                                        ws.close();
-                                        resolve(); // 即使错误也 resolve，让 UI 显示错误信息
-                                    }
+                                    // 自动打开响应模态框
+                                    this.showResponseModal = true;
+                                    // 不关闭连接，保持连接打开
                                     return;
                                 }
                                 
@@ -1007,27 +1360,14 @@
                                 // 自动打开响应模态框
                                 this.showResponseModal = true;
                                 
-                                // 如果收到成功响应且 action 匹配，关闭连接
-                                if (data.action === body.action && (data.code === 0 || data.code === 200)) {
-                                    ws.close();
-                                    resolve();
-                                    return;
-                                }
-                                
-                                // 如果收到太多消息，关闭连接
-                                if (messageCount >= maxMessages) {
-                                    console.warn('收到过多消息，关闭连接');
-                                    ws.close();
-                                    resolve();
-                                }
+                                // 不关闭连接，保持连接打开以便后续请求
                             } catch (e) {
                                 this.response = { error: '解析响应失败: ' + e.message, raw: event.data };
                                 this.responseStatus = 'error';
                                 hasReceivedResponse = true;
                                 // 自动打开响应模态框
                                 this.showResponseModal = true;
-                                ws.close();
-                                reject(e);
+                                // 不关闭连接，保持连接打开
                             }
                         };
                         
@@ -1035,14 +1375,18 @@
                             console.error('WebSocket 错误:', error);
                             this.response = { error: 'WebSocket 连接错误，请检查服务器地址和网络连接' };
                             this.responseStatus = 'error';
-                            if (!hasReceivedResponse) {
-                                reject(error);
-                            }
+                            // 连接错误时不关闭，让onclose处理
                         };
                         
                         ws.onclose = (event) => {
-                            if (!hasReceivedResponse) {
-                                // 如果连接关闭但没有收到任何响应
+                            // 清除当前连接引用
+                            if (this.currentWebSocket === ws) {
+                                this.currentWebSocket = null;
+                                this.currentWebSocketUrl = '';
+                            }
+                            
+                            if (!hasReceivedResponse && ws.readyState !== WebSocket.CLOSING) {
+                                // 如果连接关闭但没有收到任何响应，且不是主动关闭
                                 if (event.code !== 1000) { // 1000 是正常关闭
                                     this.response = { 
                                         error: `WebSocket 连接异常关闭 (代码: ${event.code})`,
@@ -1053,28 +1397,18 @@
                                     this.response = { error: 'WebSocket 连接已关闭，未收到响应' };
                                 }
                                 this.responseStatus = 'error';
-                                reject(new Error('Connection closed without response'));
                             }
                         };
-                        
-                        // 设置超时
-                        setTimeout(() => {
-                            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-                                ws.close();
-                                if (!hasReceivedResponse) {
-                                    this.response = { error: '请求超时（30秒）' };
-                                    this.responseStatus = 'error';
-                                    reject(new Error('Timeout'));
-                                }
-                            }
-                        }, 30000);
                     });
                 },
                 loadSavedServers() {
                     try {
-                        const saved = localStorage.getItem('savedServers');
+                        const key = `savedServers_${this.currentDocName}`;
+                        const saved = localStorage.getItem(key);
                         if (saved) {
                             this.savedServers = JSON.parse(saved);
+                        } else {
+                            this.savedServers = [];
                         }
                     } catch (e) {
                         console.error('加载已保存的服务器失败:', e);
@@ -1083,7 +1417,8 @@
                 },
                 saveServersToStorage() {
                     try {
-                        localStorage.setItem('savedServers', JSON.stringify(this.savedServers));
+                        const key = `savedServers_${this.currentDocName}`;
+                        localStorage.setItem(key, JSON.stringify(this.savedServers));
                     } catch (e) {
                         console.error('保存服务器列表失败:', e);
                     }
@@ -1160,6 +1495,14 @@
                     }
                 },
                 selectServer(url) {
+                    // 如果切换了服务器地址，且旧地址是WebSocket，关闭旧连接
+                    if (this.serverUrl && 
+                        (this.serverUrl.startsWith('ws://') || this.serverUrl.startsWith('wss://')) &&
+                        this.serverUrl !== url &&
+                        this.currentWebSocket) {
+                        this.currentWebSocket.close();
+                        this.currentWebSocket = null;
+                    }
                     this.serverUrl = url;
                 },
                 deleteServer(id) {
@@ -1221,6 +1564,14 @@
                         alert('复制失败，请手动选择文本复制');
                     }
                 },
+                switchToDocument(docName) {
+                    if (this.currentDocName === docName) {
+                        // 如果点击的是当前文档，不执行任何操作
+                        return;
+                    }
+                    this.currentDocName = docName;
+                    this.switchDocument();
+                },
                 async switchDocument() {
                     // 切换文档：currentDocName 已经通过 v-model 更新
                     console.log('切换文档到:', this.currentDocName);
@@ -1244,8 +1595,24 @@
                         return;
                     }
                     
+                    // 保存最后选择的文档
+                    this.saveLastSelectedDoc();
+                    
                     // 加载文档
                     await this.loadDocument();
+                    // 加载对应文档的历史记录
+                    this.loadFromHistory();
+                    // 加载对应文档的服务器列表
+                    this.loadSavedServers();
+                },
+                saveLastSelectedDoc() {
+                    try {
+                        if (this.currentDocName) {
+                            localStorage.setItem('lastSelectedDoc', this.currentDocName);
+                        }
+                    } catch (e) {
+                        console.error('保存最后选择的文档失败:', e);
+                    }
                 },
                 buildPrefixTree() {
                     if (!this.docData || !this.docData.files) {
@@ -1341,7 +1708,8 @@
                         action: action,
                         params: params || {},
                         serverUrl: serverUrl || this.serverUrl,
-                        timestamp: Date.now()
+                        timestamp: Date.now(),
+                        pinned: false
                     };
                     
                     if (existingIndex !== -1) {
@@ -1362,14 +1730,23 @@
                 },
                 loadFromHistory() {
                     try {
-                        const saved = localStorage.getItem('requestHistory');
+                        const key = `requestHistory_${this.currentDocName}`;
+                        const saved = localStorage.getItem(key);
                         if (saved) {
                             this.requestHistory = JSON.parse(saved);
+                            // 确保每个历史记录项都有pinned字段（向后兼容）
+                            this.requestHistory.forEach(item => {
+                                if (item.pinned === undefined) {
+                                    item.pinned = false;
+                                }
+                            });
                             // 确保不超过30条
                             if (this.requestHistory.length > 30) {
                                 this.requestHistory = this.requestHistory.slice(0, 30);
                                 this.saveHistoryToStorage();
                             }
+                        } else {
+                            this.requestHistory = [];
                         }
                     } catch (e) {
                         console.error('加载历史记录失败:', e);
@@ -1378,7 +1755,8 @@
                 },
                 saveHistoryToStorage() {
                     try {
-                        localStorage.setItem('requestHistory', JSON.stringify(this.requestHistory));
+                        const key = `requestHistory_${this.currentDocName}`;
+                        localStorage.setItem(key, JSON.stringify(this.requestHistory));
                     } catch (e) {
                         console.error('保存历史记录失败:', e);
                     }
@@ -1404,15 +1782,45 @@
                         }
                         
                         if (foundAction) {
+                            // 先选择 action（会重置表单）
                             this.selectAction(foundAction);
-                            // 填充参数
-                            if (historyItem.params) {
-                                Object.keys(historyItem.params).forEach(key => {
-                                    this.formData[key] = historyItem.params[key];
-                                });
+                            
+                            // 填充参数到 formData（处理嵌套对象）
+                            if (historyItem.params && Object.keys(historyItem.params).length > 0) {
+                                // 将历史记录的 params 填充到 formData
+                                if (this.selectedAction && this.selectedAction.params) {
+                                    for (const param of this.selectedAction.params) {
+                                        if (param.Name.includes('.')) {
+                                            // 处理嵌套参数（如 page.current）
+                                            const parts = param.Name.split('.');
+                                            const parentKey = parts[0];
+                                            const childKey = parts.slice(1).join('.');
+                                            
+                                            if (historyItem.params[parentKey] && typeof historyItem.params[parentKey] === 'object') {
+                                                const value = this.getNestedValue(historyItem.params[parentKey], childKey);
+                                                if (value !== undefined) {
+                                                    this.formData[param.Name] = value;
+                                                }
+                                            }
+                                        } else {
+                                            // 普通参数
+                                            if (historyItem.params[param.Name] !== undefined) {
+                                                this.formData[param.Name] = historyItem.params[param.Name];
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // 填充参数到 jsonParamsText（格式化 JSON）
+                                this.jsonParamsText = JSON.stringify(historyItem.params, null, 2);
+                                
+                                // 如果当前是表单模式，同步数据
+                                if (this.paramsEditMode === 'form') {
+                                    this.parseJsonParams();
+                                }
                             }
                         } else {
-                            alert('找不到对应的 action: ' + historyItem.action);
+                            console.warn('找不到对应的 action: ' + historyItem.action);
                         }
                     }
                 },
@@ -1420,21 +1828,89 @@
                     this.requestHistory = this.requestHistory.filter(h => h.id !== id);
                     this.saveHistoryToStorage();
                 },
+                pinHistory(id) {
+                    const item = this.requestHistory.find(h => h.id === id);
+                    if (item) {
+                        item.pinned = !item.pinned;
+                        this.saveHistoryToStorage();
+                    }
+                },
                 clearHistory() {
-                    if (confirm('确定要清空所有历史记录吗？')) {
-                        this.requestHistory = [];
+                    const pinnedCount = this.requestHistory.filter(h => h.pinned).length;
+                    let message = '确定要清空所有历史记录吗？';
+                    if (pinnedCount > 0) {
+                        message = `确定要清空所有历史记录吗？\n（将保留 ${pinnedCount} 条置顶记录）`;
+                    }
+                    if (confirm(message)) {
+                        // 只删除未置顶的记录，保留置顶的记录
+                        this.requestHistory = this.requestHistory.filter(h => h.pinned);
                         this.saveHistoryToStorage();
                     }
                 },
                 getFilteredHistory() {
-                    if (!this.historyFilter) {
-                        return this.requestHistory;
+                    let filtered = this.requestHistory;
+                    
+                    // 如果有搜索过滤，先过滤
+                    if (this.historyFilter) {
+                        const filter = this.historyFilter.toLowerCase();
+                        filtered = this.requestHistory.filter(h => {
+                            return h.action.toLowerCase().includes(filter) ||
+                                   JSON.stringify(h.params).toLowerCase().includes(filter);
+                        });
                     }
-                    const filter = this.historyFilter.toLowerCase();
-                    return this.requestHistory.filter(h => {
-                        return h.action.toLowerCase().includes(filter) ||
-                               JSON.stringify(h.params).toLowerCase().includes(filter);
+                    
+                    // 排序：置顶的排在前面，然后按时间戳降序
+                    return filtered.sort((a, b) => {
+                        // 如果置顶状态不同，置顶的排在前面
+                        if (a.pinned !== b.pinned) {
+                            return a.pinned ? -1 : 1;
+                        }
+                        // 如果置顶状态相同，按时间戳降序（最新的在前）
+                        return new Date(b.timestamp) - new Date(a.timestamp);
                     });
+                },
+                getRecentHistoryActions() {
+                    // 获取最新10条，去重（相同action只保留最新一条或置顶的那条）
+                    const seen = new Map();
+                    for (const item of this.requestHistory) {
+                        if (!seen.has(item.action)) {
+                            seen.set(item.action, item);
+                        } else {
+                            const existing = seen.get(item.action);
+                            // 优先保留置顶的，如果都不置顶或都置顶，则保留最新的
+                            if (item.pinned && !existing.pinned) {
+                                seen.set(item.action, item);
+                            } else if (item.pinned === existing.pinned && item.timestamp > existing.timestamp) {
+                                seen.set(item.action, item);
+                            }
+                        }
+                    }
+                    // 转换为数组，排序：置顶的排在前面，然后按时间戳降序，取前10条
+                    return Array.from(seen.values())
+                        .sort((a, b) => {
+                            // 如果置顶状态不同，置顶的排在前面
+                            if (a.pinned !== b.pinned) {
+                                return a.pinned ? -1 : 1;
+                            }
+                            // 如果置顶状态相同，按时间戳降序（最新的在前）
+                            return new Date(b.timestamp) - new Date(a.timestamp);
+                        })
+                        .slice(0, 10);
+                },
+                formatParamsForDisplay(params) {
+                    if (!params || Object.keys(params).length === 0) {
+                        return '';
+                    }
+                    try {
+                        const jsonStr = JSON.stringify(params, null, 0);
+                        // 如果超过100字符，截断并添加省略号
+                        if (jsonStr.length > 100) {
+                            return jsonStr.substring(0, 100) + '...';
+                        }
+                        return jsonStr;
+                    } catch (e) {
+                        return String(params);
+                    }
                 },
                 onSearchInput() {
                     if (!this.searchQuery || !this.searchQuery.trim()) {

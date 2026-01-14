@@ -1108,6 +1108,87 @@ func parseExternalType(filePath, typeName string, action *ActionDoc) {
 	})
 }
 
+// parseExternalTypeWithPrefix 解析外部包的类型定义，并在字段名前添加前缀
+func parseExternalTypeWithPrefix(filePath, typeName string, action *ActionDoc, prefix string) {
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	if err != nil {
+		return
+	}
+
+	// 查找类型定义
+	ast.Inspect(node, func(n ast.Node) bool {
+		if ts, ok := n.(*ast.TypeSpec); ok && ts.Name.Name == typeName {
+			if st, ok := ts.Type.(*ast.StructType); ok {
+				extractFieldsFromStructWithPrefix(st, action, prefix)
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// extractFieldsFromStructWithPrefix 从结构体中提取字段，并在字段名前添加前缀
+func extractFieldsFromStructWithPrefix(st *ast.StructType, action *ActionDoc, prefix string) {
+	if st.Fields == nil {
+		return
+	}
+
+	for _, field := range st.Fields.List {
+		if len(field.Names) == 0 {
+			continue
+		}
+
+		fieldName := field.Names[0].Name
+		fieldType := getTypeString(field.Type)
+		jsonTag := extractJSONTag(field.Tag)
+
+		// 跳过 json:"-" 的字段（这些字段不会出现在 JSON 中）
+		if jsonTag == "-" {
+			continue
+		}
+
+		// 检查 gorm 标签，跳过自增主键和带 CURRENT_TIMESTAMP 默认值的字段
+		if shouldSkipGormField(field.Tag) {
+			continue
+		}
+
+		required := !isOptional(field.Type, field.Tag)
+
+		// 使用 JSON 标签作为参数名，如果没有则使用字段名
+		paramName := jsonTag
+		if paramName == "" {
+			paramName = fieldName
+		}
+
+		// 添加前缀（如 "page."）
+		paramName = prefix + "." + paramName
+
+		// 提取注释：优先使用行内注释（field.Comment），如果没有则使用上方注释（field.Doc）
+		description := extractComment(field.Comment)
+		if description == "" {
+			description = extractComment(field.Doc)
+		}
+
+		// 检查是否已存在（避免重复）
+		exists := false
+		for _, p := range action.Params {
+			if p.Name == paramName {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			action.Params = append(action.Params, ParamField{
+				Name:        paramName,
+				Type:        fieldType,
+				Required:    required,
+				Description: description,
+			})
+		}
+	}
+}
+
 // extractParamsFromFuncBody 从函数体中提取参数
 // packageDir 是可选的包目录，用于查找同一包内的类型定义
 func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast.File, fset *token.FileSet, packageDir string) {
@@ -1237,23 +1318,90 @@ func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast
 						return true
 					})
 
-					// 如果找到了类型，提取字段；否则添加一个通用参数
+					// 如果找到了类型，提取字段（使用 pathName 作为前缀）
 					if varType != nil {
-						typeStr := getTypeString(varType)
-						// 检查是否已存在（避免重复）
-						exists := false
-						for _, p := range action.Params {
-							if p.Name == pathName {
-								exists = true
-								break
+						// 检查是否是结构体类型，如果是则提取字段
+						if st, ok := varType.(*ast.StructType); ok {
+							// 直接提取结构体字段，使用 pathName 作为前缀
+							extractFieldsFromStructWithPrefix(st, action, pathName)
+						} else if sel, ok := varType.(*ast.SelectorExpr); ok {
+							// 处理外部包的类型（如 model.XXX）
+							var pkgName, typeName string
+							if pkgIdent, ok := sel.X.(*ast.Ident); ok {
+								pkgName = pkgIdent.Name
+								typeName = sel.Sel.Name
 							}
-						}
-						if !exists {
-							action.Params = append(action.Params, ParamField{
-								Name:     pathName,
-								Type:     typeStr,
-								Required: true,
-							})
+							if pkgName != "" && typeName != "" {
+								// 从 import 语句中找到包的完整路径
+								packagePath := findPackagePath(pkgName, file)
+								if packagePath != "" {
+									// 查找类型定义
+									typeFile := findTypeFile(packagePath, typeName)
+									if typeFile != "" {
+										parseExternalTypeWithPrefix(typeFile, typeName, action, pathName)
+									}
+								}
+							}
+						} else if ident, ok := varType.(*ast.Ident); ok {
+							// 处理当前包的类型，需要查找类型定义
+							// 如果提供了包目录，使用支持包目录的版本
+							if packageDir != "" {
+								// 在同一包的其他文件中查找类型定义
+								files, err := os.ReadDir(packageDir)
+								if err == nil {
+									for _, f := range files {
+										if f.IsDir() || !strings.HasSuffix(f.Name(), ".go") {
+											continue
+										}
+										otherFilePath := filepath.Join(packageDir, f.Name())
+										fset := token.NewFileSet()
+										otherNode, err := parser.ParseFile(fset, otherFilePath, nil, parser.ParseComments)
+										if err != nil {
+											continue
+										}
+										// 确保是同一个包
+										if otherNode.Name != nil && file.Name != nil && otherNode.Name.Name == file.Name.Name {
+											ast.Inspect(otherNode, func(n ast.Node) bool {
+												if ts, ok := n.(*ast.TypeSpec); ok && ts.Name.Name == ident.Name {
+													if st, ok := ts.Type.(*ast.StructType); ok {
+														extractFieldsFromStructWithPrefix(st, action, pathName)
+														return false
+													}
+												}
+												return true
+											})
+										}
+									}
+								}
+							} else {
+								// 在当前文件中查找类型定义
+								ast.Inspect(file, func(n ast.Node) bool {
+									if ts, ok := n.(*ast.TypeSpec); ok && ts.Name.Name == ident.Name {
+										if st, ok := ts.Type.(*ast.StructType); ok {
+											extractFieldsFromStructWithPrefix(st, action, pathName)
+											return false
+										}
+									}
+									return true
+								})
+							}
+						} else {
+							// 其他类型（如数组、指针等），添加一个通用参数
+							typeStr := getTypeString(varType)
+							exists := false
+							for _, p := range action.Params {
+								if p.Name == pathName {
+									exists = true
+									break
+								}
+							}
+							if !exists {
+								action.Params = append(action.Params, ParamField{
+									Name:     pathName,
+									Type:     typeStr,
+									Required: true,
+								})
+							}
 						}
 					} else {
 						// 如果找不到类型，至少添加参数名
@@ -1289,31 +1437,42 @@ func extractParamsFromFuncBody(body *ast.BlockStmt, action *ActionDoc, file *ast
 				return true
 			}
 
-			// 添加 page 对象下的分页参数
-			// 根据 ws.Page 结构体：Current (int), PageSize (int)
-			paginationParams := []struct {
-				name string
-				typ  string
-			}{
-				{"page.current", "int"},
-				{"page.pageSize", "int"},
-			}
-
-			for _, param := range paginationParams {
-				// 检查是否已存在（避免重复）
-				exists := false
-				for _, p := range action.Params {
-					if p.Name == param.name {
-						exists = true
-						break
-					}
+			// 查找 ws.Page 结构体定义并提取字段
+			// 从 import 语句中找到 ws 包的完整路径
+			wsPackagePath := findPackagePath("ws", file)
+			if wsPackagePath != "" {
+				// 查找 Page 类型定义
+				typeFile := findTypeFile(wsPackagePath, "Page")
+				if typeFile != "" {
+					// 解析 Page 结构体并提取字段，使用 "page." 作为前缀
+					parseExternalTypeWithPrefix(typeFile, "Page", action, "page")
 				}
-				if !exists {
-					action.Params = append(action.Params, ParamField{
-						Name:     param.name,
-						Type:     param.typ,
-						Required: false, // 分页参数通常有默认值，所以是可选的
-					})
+			} else {
+				// 如果找不到 ws 包，使用默认的分页参数
+				paginationParams := []struct {
+					name string
+					typ  string
+				}{
+					{"page.current", "int"},
+					{"page.pageSize", "int"},
+				}
+
+				for _, param := range paginationParams {
+					// 检查是否已存在（避免重复）
+					exists := false
+					for _, p := range action.Params {
+						if p.Name == param.name {
+							exists = true
+							break
+						}
+					}
+					if !exists {
+						action.Params = append(action.Params, ParamField{
+							Name:     param.name,
+							Type:     param.typ,
+							Required: false, // 分页参数通常有默认值，所以是可选的
+						})
+					}
 				}
 			}
 		}
