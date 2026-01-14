@@ -346,7 +346,20 @@ func runDocgen(routerDir, outputDir, configFile, workDir, format string) error {
 
 	fmt.Printf("总共解析 %d 个 action\n", len(allActions))
 
-	// 6. 为每个路由文件生成独立的文档，并收集文档信息
+	// 6. 基于所有路由文件生成全局接口更新日志
+	var globalChangelog *docgen.ChangelogEntry
+	if format == "json" {
+		changelog, err := docgen.GenerateGlobalChangelog(outputDir, routerFiles)
+		if err != nil {
+			fmt.Printf("警告: 生成全局接口更新日志失败: %v\n", err)
+		} else if changelog != nil {
+			globalChangelog = changelog
+			fmt.Printf("已生成全局接口更新日志（版本: %s, 新增: %d, 删除: %d）\n",
+				changelog.Version, len(changelog.Added), len(changelog.Removed))
+		}
+	}
+
+	// 7. 为每个路由文件生成独立的文档，并收集文档信息
 	var documents []docgen.DocumentInfo
 	for _, rf := range routerFiles {
 		if len(rf.Actions) == 0 {
@@ -369,9 +382,9 @@ func runDocgen(routerDir, outputDir, configFile, workDir, format string) error {
 		} else {
 			docFileName = fmt.Sprintf("cmd_api_%s.json", baseName)
 			outputPath = filepath.Join(outputDir, docFileName)
-			// 为单个路由文件生成 JSON 文档
+			// 为单个路由文件生成 JSON 文档，传入全局 changelog
 			singleRouterFiles := []docgen.RouterFile{rf}
-			if err := docgen.GenerateJSON(singleRouterFiles, outputPath); err != nil {
+			if err := docgen.GenerateJSON(singleRouterFiles, outputPath, globalChangelog); err != nil {
 				fmt.Printf("生成 JSON 文档失败 (%s): %v\n", rf.FileName, err)
 				continue
 			}
@@ -398,7 +411,7 @@ func runDocgen(routerDir, outputDir, configFile, workDir, format string) error {
 		fmt.Printf("文档生成成功: %s (%d 个 action)\n", outputPath, len(rf.Actions))
 	}
 
-	// 7. 更新配置文件中的文档列表
+	// 8. 更新配置文件中的文档列表
 	if len(documents) > 0 {
 		if err := docgen.UpdateDocumentsInConfig(actualConfigPath, documents, format); err != nil {
 			fmt.Printf("警告: 更新配置文件中的文档列表失败: %v\n", err)
@@ -408,19 +421,4 @@ func runDocgen(routerDir, outputDir, configFile, workDir, format string) error {
 	}
 
 	return nil
-}
-
-// collectJSONFiles 收集生成的JSON文件
-func collectJSONFiles(dir string) ([]string, error) {
-	var jsonFiles []string
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.HasSuffix(info.Name(), ".json") {
-			jsonFiles = append(jsonFiles, path)
-		}
-		return nil
-	})
-	return jsonFiles, err
 }

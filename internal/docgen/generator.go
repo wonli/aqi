@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -12,12 +13,6 @@ import (
 // GenerateMarkdown 生成 Markdown 文档
 func GenerateMarkdown(routerFiles []RouterFile, outputPath string) error {
 	var buf strings.Builder
-
-	// 更新全局配置中的版本信息（使用最新的 git 版本）
-	if globalCategoryConfig != nil {
-		globalCategoryConfig.Metadata.Version = getGitVersion()
-		globalCategoryConfig.Metadata.GeneratedAt = time.Now().Format("2006-01-02 15:04:05")
-	}
 
 	// 获取元数据
 	metadata := getMetadata()
@@ -399,9 +394,26 @@ func getExampleValue(typ string) string {
 
 // JSONDocument JSON 文档结构
 type JSONDocument struct {
-	Metadata metadataConfig   `json:"metadata"`
-	Info     JSONDocumentInfo `json:"info"`
-	Files    []JSONRouterFile `json:"files"`
+	Metadata    metadataConfig   `json:"metadata"`
+	GeneratedAt string           `json:"generatedAt"` // 文档生成时间（格式：2006-01-02 15:04:05）
+	Info        JSONDocumentInfo `json:"info"`
+	Files       []JSONRouterFile `json:"files"`
+	Changelog   *ChangelogEntry  `json:"changelog,omitempty"` // 接口更新日志
+}
+
+// ChangelogEntry 更新日志条目
+type ChangelogEntry struct {
+	Version   string   `json:"version"`   // 版本号（commit 计数）
+	Timestamp string   `json:"timestamp"` // 生成时间
+	Added     []string `json:"added"`     // 新增的接口
+	Removed   []string `json:"removed"`   // 删除的接口
+}
+
+// ApiSnapshot 接口快照（用于版本对比）
+type ApiSnapshot struct {
+	Version   string   `json:"version"`   // commit 计数
+	Timestamp string   `json:"timestamp"` // 快照时间
+	Actions   []string `json:"actions"`   // 接口名称列表
 }
 
 // JSONDocumentInfo 文档信息
@@ -453,19 +465,17 @@ type JSONExample struct {
 }
 
 // GenerateJSON 生成 JSON 文档
-func GenerateJSON(routerFiles []RouterFile, outputPath string) error {
-	// 更新全局配置中的版本信息（使用最新的 git 版本）
-	if globalCategoryConfig != nil {
-		globalCategoryConfig.Metadata.Version = getGitVersion()
-		globalCategoryConfig.Metadata.GeneratedAt = time.Now().Format("2006-01-02 15:04:05")
-	}
-
+// changelog 参数可选，如果提供则使用它，否则不生成 changelog
+func GenerateJSON(routerFiles []RouterFile, outputPath string, changelog *ChangelogEntry) error {
 	// 获取元数据
 	metadata := getMetadata()
+	// 更新版本号（只在 JSON 文档中记录，不更新配置文件）
+	metadata.Version = getGitVersion()
 
 	// 构建 JSON 文档结构
 	doc := JSONDocument{
-		Metadata: metadata,
+		Metadata:    metadata,
+		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
 		Info: JSONDocumentInfo{
 			RequestFormat:  "{\"action\":\"<动作名称>\", \"params\": { ... }}",
 			ResponseFormat: "JSON（包含 code/msg/data 等）",
@@ -583,6 +593,11 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string) error {
 		doc.Files = append(doc.Files, jsonFile)
 	}
 
+	// 如果提供了 changelog，使用它
+	if changelog != nil {
+		doc.Changelog = changelog
+	}
+
 	// 生成 JSON
 	jsonData, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
@@ -591,6 +606,129 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string) error {
 
 	// 写入文件
 	return os.WriteFile(outputPath, jsonData, 0644)
+}
+
+// GenerateGlobalChangelog 基于所有路由文件生成全局接口更新日志
+// 通过对比当前版本和上一个版本的接口列表，识别新增和删除的接口
+// snapshotDir 是快照文件保存的目录（通常是 docs 目录）
+func GenerateGlobalChangelog(snapshotDir string, allRouterFiles []RouterFile) (*ChangelogEntry, error) {
+	// 获取当前 commit 计数
+	currentVersion := getGitCommitCount()
+	if currentVersion == "-" {
+		// 如果不在 git 仓库中，不生成更新日志
+		return nil, nil
+	}
+
+	// 收集当前版本的所有接口名称
+	currentActions := make(map[string]bool)
+	for _, rf := range allRouterFiles {
+		for _, action := range rf.Actions {
+			currentActions[action.Name] = true
+		}
+	}
+
+	// 转换为排序后的列表
+	currentActionList := make([]string, 0, len(currentActions))
+	for action := range currentActions {
+		currentActionList = append(currentActionList, action)
+	}
+	sort.Strings(currentActionList)
+
+	// 快照文件路径（在指定的目录中）
+	snapshotPath := filepath.Join(snapshotDir, "api_snapshots.json")
+
+	// 读取上一个版本的快照
+	var previousSnapshot *ApiSnapshot
+	if snapshotData, err := os.ReadFile(snapshotPath); err == nil {
+		var snapshots []ApiSnapshot
+		if err := json.Unmarshal(snapshotData, &snapshots); err == nil && len(snapshots) > 0 {
+			// 获取最新的快照（最后一个）
+			previousSnapshot = &snapshots[len(snapshots)-1]
+		}
+	}
+
+	// 生成变更日志
+	changelog := &ChangelogEntry{
+		Version:   currentVersion,
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+		Added:     []string{},
+		Removed:   []string{},
+	}
+
+	if previousSnapshot != nil {
+		// 对比差异
+		previousActions := make(map[string]bool)
+		for _, action := range previousSnapshot.Actions {
+			previousActions[action] = true
+		}
+
+		// 找出新增的接口
+		for action := range currentActions {
+			if !previousActions[action] {
+				changelog.Added = append(changelog.Added, action)
+			}
+		}
+
+		// 找出删除的接口
+		for action := range previousActions {
+			if !currentActions[action] {
+				changelog.Removed = append(changelog.Removed, action)
+			}
+		}
+
+		sort.Strings(changelog.Added)
+		sort.Strings(changelog.Removed)
+	} else {
+		// 如果没有上一个版本，所有接口都标记为新增
+		changelog.Added = currentActionList
+	}
+
+	// 如果没有变更，不生成日志条目
+	if len(changelog.Added) == 0 && len(changelog.Removed) == 0 {
+		return nil, nil
+	}
+
+	// 保存当前版本的快照
+	currentSnapshot := ApiSnapshot{
+		Version:   currentVersion,
+		Timestamp: changelog.Timestamp,
+		Actions:   currentActionList,
+	}
+
+	// 读取现有快照列表
+	var snapshots []ApiSnapshot
+	if snapshotData, err := os.ReadFile(snapshotPath); err == nil {
+		json.Unmarshal(snapshotData, &snapshots)
+	}
+
+	// 检查是否已存在相同版本的快照
+	found := false
+	for i := range snapshots {
+		if snapshots[i].Version == currentVersion {
+			// 更新现有快照
+			snapshots[i] = currentSnapshot
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		// 添加新快照
+		snapshots = append(snapshots, currentSnapshot)
+	}
+
+	// 保存快照列表（最多保留最近 50 个版本）
+	if len(snapshots) > 50 {
+		snapshots = snapshots[len(snapshots)-50:]
+	}
+
+	// 写入快照文件
+	snapshotData, err := json.MarshalIndent(snapshots, "", "  ")
+	if err == nil {
+		os.WriteFile(snapshotPath, snapshotData, 0644)
+	}
+
+	return changelog, nil
 }
 
 // getJSONExampleValue 获取 JSON 示例值（返回 interface{}）

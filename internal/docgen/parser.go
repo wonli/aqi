@@ -263,8 +263,6 @@ type metadataConfig struct {
 	Author string `yaml:"author" json:"author"`
 	// Contact 联系方式
 	Contact string `yaml:"contact" json:"contact"`
-	// GeneratedAt 文档生成时间（格式：2006-01-02 15:04:05）
-	GeneratedAt string `yaml:"generatedAt" json:"generatedAt"`
 }
 
 // middlewareGroupConfig 中间件组名称配置
@@ -310,6 +308,32 @@ type categoryConfig struct {
 
 // globalCategoryConfig 全局分类配置
 var globalCategoryConfig *categoryConfig
+
+// getGitCommitCount 获取 git commit 计数（用于版本追踪）
+func getGitCommitCount() string {
+	// 检查是否在 git 仓库中
+	if _, err := os.Stat(".git"); os.IsNotExist(err) {
+		return "-"
+	}
+
+	// 检查 git 命令是否可用
+	if _, err := exec.LookPath("git"); err != nil {
+		return "-"
+	}
+
+	// 获取 commit 计数
+	commitCmd := exec.Command("git", "rev-list", "--count", "HEAD")
+	commitOutput, err := commitCmd.Output()
+	if err != nil {
+		return "-"
+	}
+	commit := strings.TrimSpace(string(commitOutput))
+	if commit == "" {
+		return "-"
+	}
+
+	return commit
+}
 
 // getGitVersion 获取 git 版本信息（分支+commit计数+revision）
 // 格式：branch-commit-revision，如果不在 git 仓库中、git 未安装或命令失败，返回 "-"
@@ -647,9 +671,6 @@ func UpdateDocumentsInConfig(configPath string, documents []DocumentInfo, format
 
 	// 更新文档列表
 	config.AppDocuments = mergedDocs
-
-	// 更新版本信息（每次生成时自动更新）
-	config.Metadata.Version = getGitVersion()
 
 	// 写回配置文件
 	var outputData []byte

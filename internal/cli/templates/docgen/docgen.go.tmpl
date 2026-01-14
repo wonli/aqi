@@ -1,8 +1,8 @@
 package docs
 
 import (
-	"encoding/base64"
 	"embed"
+	"encoding/base64"
 	"io/fs"
 	"net/http"
 	"path"
@@ -120,7 +120,7 @@ func Handler() http.Handler {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 提取文件名部分（自动去掉路径前缀）
 		fileName := path.Base(r.URL.Path)
-		
+
 		// 如果是根路径、空路径或目录，返回 api_viewer.html
 		if fileName == "" || fileName == "/" || fileName == "." {
 			r.URL.Path = "/api_viewer.html"

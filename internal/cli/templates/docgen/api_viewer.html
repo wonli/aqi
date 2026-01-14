@@ -84,7 +84,10 @@
                     <h2 class="text-xl font-semibold text-gray-800 mb-5">API 列表</h2>
                     <div v-if="docData && docData.files && docData.files.length > 0">
                         <div v-for="file in docData.files" :key="file.fileName">
-                            <div v-for="group in file.middlewareGroups" :key="group.name" class="mb-3">
+                            <div v-for="group in file.middlewareGroups" 
+                                 :key="group.name" 
+                                 v-show="hasMatchingActionsInGroup(group)"
+                                 class="mb-3">
                                 <!-- Middleware Group -->
                                 <div class="mb-2">
                                     <button @click="toggleGroup(group.name)" 
@@ -99,7 +102,10 @@
                                     
                                     <!-- Categories -->
                                     <div v-show="expandedGroups[group.name]" class="ml-2 mt-1">
-                                        <div v-for="category in group.categories" :key="category.name" class="mb-1">
+                                        <div v-for="category in group.categories" 
+                                             :key="category.name" 
+                                             v-show="hasMatchingActionsInCategory(category)"
+                                             class="mb-1">
                                             <!-- 如果分类下只有一个 action，直接显示 action，不显示分类按钮 -->
                                             <template v-if="category.actions.length === 1">
                                                 <button v-for="action in category.actions" 
@@ -515,13 +521,59 @@
                     </div>
                 </div>
 
-                <!-- 未选择 Action 时的提示 -->
-                <div v-else class="flex items-center justify-center h-full">
+                <!-- 未选择 Action 时的提示和更新日志 -->
+                <div v-else class="p-6 max-w-4xl mx-auto">
+                    <!-- 更新日志 -->
+                    <div v-if="docData && docData.changelog" class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                        <h2 class="text-xl font-semibold text-gray-900 mb-4">接口更新日志</h2>
+                        <div class="space-y-4">
+                            <div class="flex items-center gap-4 text-sm text-gray-600 mb-4 pb-4 border-b">
+                                <span><strong>版本:</strong> {{ docData.changelog.version }}</span>
+                                <span><strong>更新时间:</strong> {{ docData.changelog.timestamp }}</span>
+                            </div>
+                            
+                            <div v-if="docData.changelog.added && docData.changelog.added.length > 0" class="space-y-2">
+                                <h3 class="text-sm font-semibold text-green-700 flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                    </svg>
+                                    新增接口 ({{ docData.changelog.added.length }})
+                                </h3>
+                                <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                    <button v-for="actionName in docData.changelog.added" 
+                                            :key="actionName"
+                                            @click="selectActionByName(actionName)"
+                                            class="text-left px-3 py-2 text-sm bg-green-50 hover:bg-green-100 border border-green-200 rounded-md text-green-800 hover:text-green-900 transition-colors">
+                                        {{ actionName }}
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div v-if="docData.changelog.removed && docData.changelog.removed.length > 0" class="space-y-2">
+                                <h3 class="text-sm font-semibold text-red-700 flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                    删除接口 ({{ docData.changelog.removed.length }})
+                                </h3>
+                                <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                    <div v-for="actionName in docData.changelog.removed" 
+                                         :key="actionName"
+                                         class="px-3 py-2 text-sm bg-red-50 border border-red-200 rounded-md text-red-600 line-through">
+                                        {{ actionName }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 提示信息 -->
                     <div class="text-center text-gray-500">
                         <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         <p class="text-lg">请从左侧选择一个 API 接口</p>
+                        <p v-if="!docData || !docData.changelog" class="text-sm mt-2">或查看上方的接口更新日志</p>
                     </div>
                 </div>
             </div>
@@ -814,6 +866,27 @@
                                 this.formData[param.Name] = '';
                             }
                         });
+                    }
+                },
+                selectActionByName(actionName) {
+                    // 从文档数据中查找指定名称的 action
+                    if (!this.docData || !this.docData.files) {
+                        return;
+                    }
+                    
+                    for (const file of this.docData.files) {
+                        for (const group of file.middlewareGroups || []) {
+                            for (const category of group.categories || []) {
+                                for (const action of category.actions || []) {
+                                    if (action.name === actionName) {
+                                        this.selectAction(action);
+                                        // 滚动到顶部
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                        return;
+                                    }
+                                }
+                            }
+                        }
                     }
                 },
                 getPlaceholder(param) {
@@ -1366,63 +1439,47 @@
                 onSearchInput() {
                     if (!this.searchQuery || !this.searchQuery.trim()) {
                         this.searchMatchedActions = null;
-                        // 不清理展开状态，保留用户操作
+                        // 清空搜索时，折叠所有分组
+                        this.collapseAll();
                         return;
                     }
                     
                     const query = this.searchQuery.trim().toLowerCase();
                     const matchedSet = new Set();
                     
-                    // 使用前缀树进行搜索，收集匹配的 action 名称
-                    const searchInTree = (node, queryParts, matchedPrefix = '') => {
-                        if (queryParts.length === 0) {
-                            // 查询已完成，收集所有子节点下的 actions
-                            const collectActions = (n) => {
-                                if (n.actions && n.actions.length > 0) {
-                                    n.actions.forEach(actionName => matchedSet.add(actionName));
-                                }
-                                if (n.children) {
-                                    Object.keys(n.children).forEach(key => collectActions(n.children[key]));
-                                }
-                            };
-                            collectActions(node);
-                            return;
+                    // 优化搜索：支持从任意位置匹配（包含匹配）
+                    // 例如：cha.check, check, ptcha 都能匹配 captcha.check
+                    // 直接在所有 action 名称中进行包含匹配
+                    this.allActions.forEach(action => {
+                        const actionNameLower = action.name.toLowerCase();
+                        // 匹配包含查询的 action 名称（任意位置）
+                        if (actionNameLower.includes(query)) {
+                            matchedSet.add(action.name);
                         }
-                        
-                        const firstPart = queryParts[0];
-                        const remainingParts = queryParts.slice(1);
-                        
-                        // 精确匹配
-                        if (node.children && node.children[firstPart]) {
-                            searchInTree(node.children[firstPart], remainingParts, matchedPrefix ? matchedPrefix + '.' + firstPart : firstPart);
-                        }
-                        
-                        // 模糊匹配当前节点的 actions
-                        if (node.actions && node.actions.length > 0) {
-                            node.actions.forEach(actionName => {
-                                if (actionName.toLowerCase().startsWith(query)) {
-                                    matchedSet.add(actionName);
-                                }
-                            });
-                        }
-                    };
-                    
-                    const queryParts = query.split('.');
-                    searchInTree(this.prefixTree, queryParts, '');
-                    
-                    // 如果前缀树搜索没有结果，进行模糊搜索
-                    if (matchedSet.size === 0) {
-                        this.allActions.forEach(action => {
-                            if (action.name.toLowerCase().includes(query)) {
-                                matchedSet.add(action.name);
-                            }
-                        });
-                    }
+                    });
                     
                     this.searchMatchedActions = matchedSet.size > 0 ? matchedSet : null;
                     
-                    // 自动展开左侧树，显示匹配项
-                    this.expandForMatches(this.searchMatchedActions);
+                    // 如果搜索结果为空，折叠所有分组
+                    if (!this.searchMatchedActions || this.searchMatchedActions.size === 0) {
+                        this.collapseAll();
+                    } else {
+                        // 自动展开左侧树，显示匹配项
+                        this.expandForMatches(this.searchMatchedActions);
+                    }
+                },
+                collapseAll() {
+                    // 折叠所有分组和分类
+                    if (this.docData && this.docData.files) {
+                        this.docData.files.forEach(file => {
+                            file.middlewareGroups.forEach(group => {
+                                this.expandedGroups[group.name] = false;
+                                group.categories.forEach(category => {
+                                    this.expandedCategories[`${group.name}-${category.name}`] = false;
+                                });
+                            });
+                        });
+                    }
                 },
                 expandForMatches(matchedSet) {
                     if (!matchedSet || !this.docData || !this.docData.files) return;
@@ -1446,6 +1503,34 @@
                 clearSearch() {
                     this.searchQuery = '';
                     this.searchMatchedActions = null;
+                },
+                hasMatchingActionsInGroup(group) {
+                    // 如果没有过滤，显示所有分组
+                    if (!this.filteredActions) {
+                        return true;
+                    }
+                    // 检查分组下是否有任何匹配的 action，并且该 action 所在的分类也有匹配
+                    if (!group.categories || group.categories.length === 0) {
+                        return false;
+                    }
+                    // 必须至少有一个分类有匹配的 action，分组才显示
+                    for (const category of group.categories) {
+                        if (this.hasMatchingActionsInCategory(category)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                },
+                hasMatchingActionsInCategory(category) {
+                    // 如果没有过滤，显示所有分类
+                    if (!this.filteredActions) {
+                        return true;
+                    }
+                    // 检查分类下是否有任何匹配的 action
+                    if (!category.actions || category.actions.length === 0) {
+                        return false;
+                    }
+                    return category.actions.some(action => this.filteredActions.has(action.name));
                 }
             }
                     }).mount('#app');
