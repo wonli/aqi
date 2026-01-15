@@ -44,7 +44,7 @@ func GenerateMarkdown(routerFiles []RouterFile, outputPath string) error {
 	// 使用说明
 	buf.WriteString("**WebSocket 客户端统一请求格式：**\n\n")
 	buf.WriteString("- 连接参数：`token`（登录后动作必需）、`clientId`（app 客户端识别）、`appId`、`platform`\n")
-	buf.WriteString("- 消息体：`{\"action\":\"<动作名称>\", \"params\": { ... }}`\n")
+	buf.WriteString("- 消息体：`{\"action\":\"action\", \"params\": { ... }}`\n")
 	buf.WriteString("- 返回值：统一为 JSON（包含 `code`/`msg`/`data` 等），具体字段以对应模块实现为准。\n\n")
 
 	fmt.Printf("开始生成文档，共 %d 个路由文件\n", len(routerFiles))
@@ -61,81 +61,54 @@ func GenerateMarkdown(routerFiles []RouterFile, outputPath string) error {
 		fileTitle := getFileTitle(rf.FileName)
 		buf.WriteString(fmt.Sprintf("## %s\n\n", fileTitle))
 
-		// 按中间件组合分组
-		middlewareGroups := groupByMiddleware(rf.Actions)
+		// 按action前缀分组
+		prefixGroups := groupByActionPrefix(rf.Actions)
 
-		// 按中间件组排序（先无需登录，后需要登录）
+		// 按分组名排序（空字符串表示无分组，排在最前面）
 		var groupKeys []string
-		for key := range middlewareGroups {
+		for key := range prefixGroups {
 			groupKeys = append(groupKeys, key)
 		}
 		sort.Slice(groupKeys, func(i, j int) bool {
-			// 需要登录的排在后面
-			hasAuthI := strings.Contains(groupKeys[i], "登录")
-			hasAuthJ := strings.Contains(groupKeys[j], "登录")
-			if hasAuthI != hasAuthJ {
-				return !hasAuthI
+			// 空字符串（无分组）排在前面
+			if groupKeys[i] == "" && groupKeys[j] != "" {
+				return true
+			}
+			if groupKeys[i] != "" && groupKeys[j] == "" {
+				return false
 			}
 			return groupKeys[i] < groupKeys[j]
 		})
 
 		for _, groupKey := range groupKeys {
-			actions := middlewareGroups[groupKey]
+			actions := prefixGroups[groupKey]
 			if len(actions) == 0 {
 				continue
 			}
 
-			// 中间件组标题
-			buf.WriteString(fmt.Sprintf("### %s\n\n", groupKey))
-
-			// 按功能分类分组
-			categories := groupByCategory(actions)
-
-			// 按分类排序
-			var categoryKeys []string
-			for key := range categories {
-				categoryKeys = append(categoryKeys, key)
+			// 如果有分组名，显示分组标题；无分组（空字符串）不显示标题
+			if groupKey != "" {
+				groupDisplayName := getGroupDisplayName(groupKey)
+				buf.WriteString(fmt.Sprintf("### %s\n\n", groupDisplayName))
 			}
-			sort.Strings(categoryKeys)
 
-			for _, categoryKey := range categoryKeys {
-				categoryActions := categories[categoryKey]
-				if len(categoryActions) == 0 {
-					continue
+			// 按 action 名称排序
+			sort.Slice(actions, func(i, j int) bool {
+				return actions[i].Name < actions[j].Name
+			})
+
+			// 直接输出所有 actions
+			for _, action := range actions {
+				// 根据是否有分组决定 Action 标题级别
+				actionLevel := 4 // ####
+				if groupKey == "" {
+					actionLevel = 4 // 无分组时也使用 ####
 				}
-
-				// 如果某分类仅包含一个 action，则不再额外分组，直接输出
-				if len(categoryActions) == 1 {
-					action := categoryActions[0]
-					actionLevel := 4 // 精简层级
-					buf.WriteString(formatAction(action, actionLevel))
-					buf.WriteString("\n\n")
-					continue
-				}
-
-				// 分类标题（多个 action 时才显示分类标题）
-				if len(categories) > 1 {
-					buf.WriteString(fmt.Sprintf("#### %s\n\n", categoryKey))
-				}
-
-				// 按 action 名称排序
-				sort.Slice(categoryActions, func(i, j int) bool {
-					return categoryActions[i].Name < categoryActions[j].Name
-				})
-
-				for _, action := range categoryActions {
-					// 根据层级深度决定 Action 标题级别
-					// 如果有分类，使用 #####，否则使用 ####
-					actionLevel := 5 // #####
-					if len(categories) <= 1 {
-						actionLevel = 4 // ####
-					}
-					buf.WriteString(formatAction(action, actionLevel))
-					buf.WriteString("\n")
-				}
-
+				buf.WriteString(formatAction(action, actionLevel))
 				buf.WriteString("\n")
 			}
+
+			buf.WriteString("\n")
 		}
 	}
 
@@ -157,80 +130,89 @@ func getFileTitle(fileName string) string {
 	return title + " API"
 }
 
-// groupByMiddleware 按中间件组合分组
-func groupByMiddleware(actions []ActionDoc) map[string][]ActionDoc {
+// groupByActionPrefix 按action前缀分组
+func groupByActionPrefix(actions []ActionDoc) map[string][]ActionDoc {
 	groups := make(map[string][]ActionDoc)
 
 	for _, action := range actions {
-		groupKey := getMiddlewareGroupName(action)
+		// 提取前缀（第一个点号之前的部分）
+		parts := strings.Split(action.Name, ".")
+		var groupKey string
+		if len(parts) > 1 {
+			groupKey = parts[0] // 有分组
+		} else {
+			groupKey = "" // 无分组，空字符串表示
+		}
 		groups[groupKey] = append(groups[groupKey], action)
 	}
 
 	return groups
 }
 
-// getMiddlewareGroupName 获取中间件组名称（从配置中读取）
-func getMiddlewareGroupName(action ActionDoc) string {
+// getGroupDisplayName 获取分组显示名称（从配置中读取，如果不存在则使用原始前缀）
+func getGroupDisplayName(groupKey string) string {
 	if globalCategoryConfig == nil {
-		// 如果配置未加载，使用默认值
-		if len(action.MiddlewareChain) > 0 {
-			mwNames := strings.Join(action.MiddlewareChain, ", ")
-			return mwNames
-		}
-		return "默认"
+		return groupKey
 	}
 
-	mg := globalCategoryConfig.MiddlewareGroup
-
-	// 使用统一的 MiddlewareMap
-	if len(mg.MiddlewareMap) > 0 {
-		// 1. 优先匹配中间件链（更具体，优先级更高）
-		if len(action.MiddlewareChain) > 0 {
-			// 使用下划线分隔的小写格式（如 recovery_app_auth）
-			chainKey := strings.ToLower(strings.Join(action.MiddlewareChain, "_"))
-			if chainName, ok := mg.MiddlewareMap[chainKey]; ok {
-				return chainName
-			}
-		}
-
-		// 2. 匹配中间件组变量名
-		if action.MiddlewareGroup != "" {
-			if groupName, ok := mg.MiddlewareMap[action.MiddlewareGroup]; ok {
-				return groupName
-			}
+	// 从配置中查找分组名称
+	if globalCategoryConfig.GroupNames != nil {
+		if name, ok := globalCategoryConfig.GroupNames[groupKey]; ok {
+			return name
 		}
 	}
 
-	// 5. 使用默认模板（基于中间件链）
-	if len(action.MiddlewareChain) > 0 {
-		mwNames := strings.Join(action.MiddlewareChain, ", ")
-		return fmt.Sprintf(mg.DefaultTemplate, mwNames)
-	}
-
-	// 6. 无中间件
-	return mg.NoMiddleware
+	// 如果配置中没有，使用原始前缀
+	return groupKey
 }
 
-// getAuthRequirement 获取权限要求描述（根据中间件组名称）
-func getAuthRequirement(action ActionDoc) string {
-	// 直接使用中间件组名称作为权限要求
-	groupName := getMiddlewareGroupName(action)
-	return groupName
-}
+// buildJSONAction 构建 JSONAction 对象
+func buildJSONAction(action ActionDoc) JSONAction {
+	// 构建示例（直接作为对象输出）
+	// 将点号分隔的字段名转换为嵌套对象
+	params := make(map[string]interface{})
+	for _, p := range action.Params {
+		if p.Required {
+			// 检查参数名是否包含点号（如 "page.current"）
+			if strings.Contains(p.Name, ".") {
+				parts := strings.SplitN(p.Name, ".", 2)
+				parentKey := parts[0]
+				childKey := parts[1]
 
-// groupByCategory 按功能分类分组
-func groupByCategory(actions []ActionDoc) map[string][]ActionDoc {
-	groups := make(map[string][]ActionDoc)
-
-	for _, action := range actions {
-		category := action.Category
-		if category == "" {
-			category = "其他"
+				// 如果父键不存在，创建嵌套对象
+				if _, exists := params[parentKey]; !exists {
+					params[parentKey] = make(map[string]interface{})
+				}
+				// 将子字段添加到嵌套对象中
+				if parentObj, ok := params[parentKey].(map[string]interface{}); ok {
+					parentObj[childKey] = getJSONExampleValue(p.Type)
+				}
+			} else {
+				// 普通字段，直接添加
+				params[p.Name] = getJSONExampleValue(p.Type)
+			}
 		}
-		groups[category] = append(groups[category], action)
 	}
 
-	return groups
+	exampleRequest := map[string]interface{}{
+		"action": action.Name,
+		"params": params,
+	}
+
+	return JSONAction{
+		Name:        action.Name,
+		Description: action.Description,
+		Params:      action.Params,
+		Returns: JSONReturnType{
+			SuccessType: action.Returns.SuccessType,
+			HasData:     action.Returns.HasData,
+		},
+		MiddlewareChain: action.MiddlewareChain,
+		Example: JSONExample{
+			Request: exampleRequest,
+		},
+		ErrorCodes: action.Returns.ErrorCodes,
+	}
 }
 
 // formatAction 格式化 action（非表格格式）
@@ -265,10 +247,6 @@ func formatAction(action ActionDoc, level int) string {
 	example = strings.Trim(example, "`")
 	buf.WriteString(fmt.Sprintf("**使用示例：**\n\n```json\n%s\n```\n\n", example))
 
-	// 权限要求（从配置中读取）
-	authReq := getAuthRequirement(action)
-	buf.WriteString(fmt.Sprintf("**权限要求：** %s\n\n", authReq))
-
 	// 错误码
 	if len(action.Returns.ErrorCodes) > 0 {
 		buf.WriteString(formatErrorCodes(action.Returns.ErrorCodes))
@@ -302,26 +280,6 @@ func formatParamsList(params []ParamField) string {
 	}
 
 	return buf.String()
-}
-
-// formatParams 格式化参数说明
-func formatParams(params []ParamField) string {
-	if len(params) == 0 {
-		return ""
-	}
-
-	var parts []string
-	for _, p := range params {
-		part := fmt.Sprintf("`%s`", p.Name)
-		if p.Type != "" {
-			part += fmt.Sprintf(" (%s)", p.Type)
-		}
-		if !p.Required {
-			part += " 可选"
-		}
-		parts = append(parts, part)
-	}
-	return strings.Join(parts, ", ")
 }
 
 // formatReturns 格式化返回值
@@ -422,21 +380,15 @@ type JSONDocumentInfo struct {
 
 // JSONRouterFile 路由文件 JSON 结构
 type JSONRouterFile struct {
-	FileName         string                `json:"fileName"`
-	Title            string                `json:"title"`
-	MiddlewareGroups []JSONMiddlewareGroup `json:"middlewareGroups"`
+	FileName string      `json:"fileName"`
+	Title    string      `json:"title"`
+	Groups   []JSONGroup `json:"groups"`
 }
 
-// JSONMiddlewareGroup 中间件组 JSON 结构
-type JSONMiddlewareGroup struct {
-	Name       string         `json:"name"`
-	Categories []JSONCategory `json:"categories"`
-}
-
-// JSONCategory 分类 JSON 结构
-type JSONCategory struct {
-	Name    string       `json:"name"`
-	Actions []JSONAction `json:"actions"`
+// JSONGroup 前缀分组 JSON 结构
+type JSONGroup struct {
+	Name    string       `json:"name"`    // 分组名（前缀），空字符串表示无分组
+	Actions []JSONAction `json:"actions"` // actions 列表
 }
 
 // JSONAction Action JSON 结构
@@ -445,7 +397,7 @@ type JSONAction struct {
 	Description     string         `json:"description"`
 	Params          []ParamField   `json:"params"`
 	Returns         JSONReturnType `json:"returns"`
-	AuthRequirement string         `json:"authRequirement"`
+	MiddlewareChain []string       `json:"middlewareChain"` // 中间件链数组
 	Example         JSONExample    `json:"example"`
 	ErrorCodes      []ErrorCode    `json:"errorCodes"`
 }
@@ -475,7 +427,7 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string, changelog *Change
 		Metadata:    metadata,
 		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
 		Info: JSONDocumentInfo{
-			RequestFormat:  "{\"action\":\"<动作名称>\", \"params\": { ... }}",
+			RequestFormat:  "{\"action\":\"action\", \"params\": { ... }}",
 			ResponseFormat: "JSON（包含 code/msg/data 等）",
 		},
 		Files: make([]JSONRouterFile, 0),
@@ -489,121 +441,56 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string, changelog *Change
 
 		fileTitle := getFileTitle(rf.FileName)
 		jsonFile := JSONRouterFile{
-			FileName:         rf.FileName,
-			Title:            fileTitle,
-			MiddlewareGroups: make([]JSONMiddlewareGroup, 0),
+			FileName: rf.FileName,
+			Title:    fileTitle,
+			Groups:   make([]JSONGroup, 0),
 		}
 
-		// 按中间件组合分组
-		middlewareGroups := groupByMiddleware(rf.Actions)
+		// 按action前缀分组
+		prefixGroups := groupByActionPrefix(rf.Actions)
 
-		// 按中间件组排序
+		// 按分组名排序（空字符串表示无分组，排在最前面）
 		var groupKeys []string
-		for key := range middlewareGroups {
+		for key := range prefixGroups {
 			groupKeys = append(groupKeys, key)
 		}
 		sort.Slice(groupKeys, func(i, j int) bool {
-			hasAuthI := strings.Contains(groupKeys[i], "登录")
-			hasAuthJ := strings.Contains(groupKeys[j], "登录")
-			if hasAuthI != hasAuthJ {
-				return !hasAuthI
+			// 空字符串（无分组）排在前面
+			if groupKeys[i] == "" && groupKeys[j] != "" {
+				return true
+			}
+			if groupKeys[i] != "" && groupKeys[j] == "" {
+				return false
 			}
 			return groupKeys[i] < groupKeys[j]
 		})
 
 		for _, groupKey := range groupKeys {
-			actions := middlewareGroups[groupKey]
+			actions := prefixGroups[groupKey]
 			if len(actions) == 0 {
 				continue
 			}
 
-			jsonGroup := JSONMiddlewareGroup{
-				Name:       groupKey,
-				Categories: make([]JSONCategory, 0),
+			// 获取分组显示名称
+			groupDisplayName := getGroupDisplayName(groupKey)
+
+			jsonGroup := JSONGroup{
+				Name:    groupDisplayName,
+				Actions: make([]JSONAction, 0),
 			}
 
-			// 按功能分类分组
-			categories := groupByCategory(actions)
+			// 按 action 名称排序
+			sort.Slice(actions, func(i, j int) bool {
+				return actions[i].Name < actions[j].Name
+			})
 
-			// 按分类排序
-			var categoryKeys []string
-			for key := range categories {
-				categoryKeys = append(categoryKeys, key)
-			}
-			sort.Strings(categoryKeys)
-
-			for _, categoryKey := range categoryKeys {
-				categoryActions := categories[categoryKey]
-				if len(categoryActions) == 0 {
-					continue
-				}
-
-				jsonCategory := JSONCategory{
-					Name:    categoryKey,
-					Actions: make([]JSONAction, 0),
-				}
-
-				// 按 action 名称排序
-				sort.Slice(categoryActions, func(i, j int) bool {
-					return categoryActions[i].Name < categoryActions[j].Name
-				})
-
-				for _, action := range categoryActions {
-					authReq := getAuthRequirement(action)
-
-					// 构建示例（直接作为对象输出）
-					// 将点号分隔的字段名转换为嵌套对象
-					params := make(map[string]interface{})
-					for _, p := range action.Params {
-						if p.Required {
-							// 检查参数名是否包含点号（如 "page.current"）
-							if strings.Contains(p.Name, ".") {
-								parts := strings.SplitN(p.Name, ".", 2)
-								parentKey := parts[0]
-								childKey := parts[1]
-
-								// 如果父键不存在，创建嵌套对象
-								if _, exists := params[parentKey]; !exists {
-									params[parentKey] = make(map[string]interface{})
-								}
-								// 将子字段添加到嵌套对象中
-								if parentObj, ok := params[parentKey].(map[string]interface{}); ok {
-									parentObj[childKey] = getJSONExampleValue(p.Type)
-								}
-							} else {
-								// 普通字段，直接添加
-								params[p.Name] = getJSONExampleValue(p.Type)
-							}
-						}
-					}
-
-					exampleRequest := map[string]interface{}{
-						"action": action.Name,
-						"params": params,
-					}
-
-					jsonAction := JSONAction{
-						Name:        action.Name,
-						Description: action.Description,
-						Params:      action.Params,
-						Returns: JSONReturnType{
-							SuccessType: action.Returns.SuccessType,
-							HasData:     action.Returns.HasData,
-						},
-						AuthRequirement: authReq,
-						Example: JSONExample{
-							Request: exampleRequest,
-						},
-						ErrorCodes: action.Returns.ErrorCodes,
-					}
-
-					jsonCategory.Actions = append(jsonCategory.Actions, jsonAction)
-				}
-
-				jsonGroup.Categories = append(jsonGroup.Categories, jsonCategory)
+			// 直接将所有 actions 添加到 group
+			for _, action := range actions {
+				jsonAction := buildJSONAction(action)
+				jsonGroup.Actions = append(jsonGroup.Actions, jsonAction)
 			}
 
-			jsonFile.MiddlewareGroups = append(jsonFile.MiddlewareGroups, jsonGroup)
+			jsonFile.Groups = append(jsonFile.Groups, jsonGroup)
 		}
 
 		doc.Files = append(doc.Files, jsonFile)

@@ -150,7 +150,6 @@ func ParseRouterFile(filePath, funcName string) ([]ActionDoc, error) {
 			RouterFile:      filepath.Base(filePath),
 			MiddlewareGroup: middlewareGroup,
 			MiddlewareChain: middlewareChain,
-			Category:        inferCategory(actionName),
 			Params:          []ParamField{},
 			Returns:         ReturnType{ErrorCodes: []ErrorCode{}},
 		}
@@ -265,18 +264,6 @@ type metadataConfig struct {
 	Contact string `yaml:"contact" json:"contact"`
 }
 
-// middlewareGroupConfig 中间件组名称配置
-type middlewareGroupConfig struct {
-	// MiddlewareMap 统一的中间件映射配置（同时支持中间件链和中间件组变量名作为 key）
-	// 中间件链格式：使用下划线分隔的小写格式，如 recovery_app_auth -> "需要登录"（无需引号）
-	// 匹配优先级：中间件链 > 中间件组变量名
-	MiddlewareMap map[string]string `yaml:"middlewareMap" json:"middlewareMap"`
-	// DefaultTemplate 默认组名称模板（支持 %s 占位符，会被中间件名称列表替换）
-	DefaultTemplate string `yaml:"defaultTemplate" json:"defaultTemplate"`
-	// NoMiddleware 无中间件的组名称
-	NoMiddleware string `yaml:"noMiddleware" json:"noMiddleware"`
-}
-
 // DocumentInfo 文档信息
 type DocumentInfo struct {
 	Name  string `yaml:"name" json:"name"`   // 文档名称（如 "action", "action-admin"）
@@ -296,10 +283,8 @@ type authConfig struct {
 type categoryConfig struct {
 	// Metadata 元数据配置
 	Metadata metadataConfig `yaml:"metadata" json:"metadata"`
-	// CategoryMap 分类映射（完全匹配优先级最高，否则使用点号前缀匹配）
-	CategoryMap map[string]string `yaml:"categoryMap" json:"categoryMap"`
-	// MiddlewareGroup 中间件组名称配置
-	MiddlewareGroup middlewareGroupConfig `yaml:"middlewareGroup" json:"middlewareGroup"`
+	// GroupNames 分组名称映射（前缀 -> 显示名称）
+	GroupNames map[string]string `yaml:"groupNames" json:"groupNames"`
 	// AppDocuments 文档列表（生成的 JSON 文档文件信息）
 	AppDocuments []DocumentInfo `yaml:"appDocuments" json:"appDocuments"`
 	// Auth 身份认证配置（用于文档访问保护）
@@ -398,11 +383,8 @@ func generateRandomPasswordHex(bytesLen int) (string, error) {
 // generateDefaultConfig 根据 action 列表生成默认配置文件
 func generateDefaultConfig(configPath string, actions []ActionDoc) error {
 	// 只收集前缀（第一个点号之前的部分）
-	categoryMap := make(map[string]string)
+	groupNames := make(map[string]string)
 	prefixSet := make(map[string]bool)
-
-	// 统一的中间件映射
-	middlewareMap := make(map[string]string)
 
 	for _, action := range actions {
 		// 提取前缀（第一个点号之前的部分）
@@ -411,23 +393,14 @@ func generateDefaultConfig(configPath string, actions []ActionDoc) error {
 			prefix := parts[0]
 			if !prefixSet[prefix] {
 				prefixSet[prefix] = true
-				// 添加前缀（值=键）
-				categoryMap[prefix] = prefix
+				// 添加前缀（值=键，用户可以根据需要修改为中文名称）
+				groupNames[prefix] = prefix
 			}
 		} else {
 			// 如果没有点号，使用完整名称
 			if !prefixSet[action.Name] {
 				prefixSet[action.Name] = true
-				categoryMap[action.Name] = action.Name
-			}
-		}
-
-		// 只收集中间件链（使用下划线分隔的小写格式，更简洁，不需要引号）
-		// 不收集单个中间件组变量名，只保留中间件链配置
-		if len(action.MiddlewareChain) > 0 {
-			chainKey := strings.ToLower(strings.Join(action.MiddlewareChain, "_"))
-			if _, exists := middlewareMap[chainKey]; !exists {
-				middlewareMap[chainKey] = chainKey
+				groupNames[action.Name] = action.Name
 			}
 		}
 	}
@@ -447,12 +420,7 @@ func generateDefaultConfig(configPath string, actions []ActionDoc) error {
 			Version:     gitVersion,
 			Description: "WebSocket API 文档",
 		},
-		CategoryMap: categoryMap,
-		MiddlewareGroup: middlewareGroupConfig{
-			MiddlewareMap:   middlewareMap,
-			DefaultTemplate: "%s",
-			NoMiddleware:    "默认",
-		},
+		GroupNames: groupNames,
 		Auth: authConfig{
 			Enabled:  false,
 			Username: "admin",
@@ -466,9 +434,9 @@ func generateDefaultConfig(configPath string, actions []ActionDoc) error {
 
 	// 添加注释头部
 	buf.WriteString("# 文档配置文件\n")
-	buf.WriteString("# 用于定义 WebSocket Action 的分类规则和项目元数据\n")
+	buf.WriteString("# 用于定义 WebSocket Action 的分组名称和项目元数据\n")
 	buf.WriteString("# \n")
-	buf.WriteString("# 注意：categoryMap 中的值已自动设置为键值，请根据需要修改为合适的中文分类名称\n\n")
+	buf.WriteString("# 注意：groupNames 中的值已自动设置为键值，请根据需要修改为合适的中文分组名称\n\n")
 
 	// metadata
 	buf.WriteString("metadata:\n")
@@ -478,45 +446,17 @@ func generateDefaultConfig(configPath string, actions []ActionDoc) error {
 	buf.WriteString("    author: \"\"\n")
 	buf.WriteString("    contact: \"\"\n\n")
 
-	// categoryMap
-	buf.WriteString("categoryMap:\n")
+	// groupNames
+	buf.WriteString("groupNames:\n")
 	// 按键排序
-	keys := make([]string, 0, len(categoryMap))
-	for k := range categoryMap {
+	keys := make([]string, 0, len(groupNames))
+	for k := range groupNames {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		buf.WriteString(fmt.Sprintf("    %s: \"%s\"\n", k, categoryMap[k]))
+		buf.WriteString(fmt.Sprintf("    %s: \"%s\"\n", k, groupNames[k]))
 	}
-
-	// middlewareGroup
-	buf.WriteString("\nmiddlewareGroup:\n")
-
-	// middlewareMap（统一的中间件映射，只包含中间件链，不包含单个中间件组变量名）
-	buf.WriteString("    # 中间件链映射配置（使用下划线分隔的小写格式，如 recovery_app_auth -> \"需要登录\"）\n")
-	buf.WriteString("    middlewareMap:\n")
-	if len(config.MiddlewareGroup.MiddlewareMap) > 0 {
-		mKeys := make([]string, 0, len(config.MiddlewareGroup.MiddlewareMap))
-		for k := range config.MiddlewareGroup.MiddlewareMap {
-			mKeys = append(mKeys, k)
-		}
-		sort.Strings(mKeys)
-		for _, k := range mKeys {
-			// 只输出中间件链（包含下划线的），跳过单个中间件组变量名
-			if strings.Contains(k, "_") {
-				buf.WriteString(fmt.Sprintf("        %s: \"%s\"\n", k, config.MiddlewareGroup.MiddlewareMap[k]))
-			}
-		}
-	} else {
-		buf.WriteString("        # 暂无配置\n")
-	}
-	buf.WriteString("\n")
-
-	// 默认模板与无中间件文案
-	buf.WriteString(fmt.Sprintf("    defaultTemplate: \"%s\"\n", config.MiddlewareGroup.DefaultTemplate))
-	buf.WriteString("\n")
-	buf.WriteString(fmt.Sprintf("    noMiddleware: \"%s\"\n", config.MiddlewareGroup.NoMiddleware))
 
 	// appDocuments 文档列表（初始为空，会在生成文档后更新）
 	buf.WriteString("\nappDocuments: []\n")
@@ -553,7 +493,7 @@ func LoadCategoryConfig(configPath string, actions []ActionDoc) error {
 		if err := generateDefaultConfig(configPath, actions); err != nil {
 			return fmt.Errorf("生成默认配置文件失败: %w", err)
 		}
-		fmt.Printf("已生成默认配置文件，请根据需要修改 categoryMap 的值\n")
+		fmt.Printf("已生成默认配置文件，请根据需要修改 groupNames 的值\n")
 	}
 
 	// 读取配置文件
@@ -576,21 +516,54 @@ func LoadCategoryConfig(configPath string, actions []ActionDoc) error {
 	}
 
 	// 验证必需字段
-	if config.CategoryMap == nil {
-		config.CategoryMap = make(map[string]string)
+	if config.GroupNames == nil {
+		config.GroupNames = make(map[string]string)
 	}
+
+	// 收集所有当前 actions 的前缀
+	currentPrefixes := make(map[string]bool)
+	if len(actions) > 0 {
+		for _, action := range actions {
+			// 提取前缀（第一个点号之前的部分）
+			parts := strings.Split(action.Name, ".")
+			if len(parts) > 0 {
+				prefix := parts[0]
+				currentPrefixes[prefix] = true
+			} else {
+				currentPrefixes[action.Name] = true
+			}
+		}
+	}
+
+	// 自动添加缺失的分组名（保留用户已自定义的值）
+	hasNewGroups := false
+	for prefix := range currentPrefixes {
+		if _, exists := config.GroupNames[prefix]; !exists {
+			// 如果配置中没有该前缀，添加默认值（前缀 -> 前缀）
+			config.GroupNames[prefix] = prefix
+			hasNewGroups = true
+		}
+	}
+
+	// 如果有新的分组名，更新配置文件
+	if hasNewGroups {
+		// 使用 YAML marshal 来保留所有配置，然后手动更新 groupNames 部分
+		// 这样可以保留用户的 appDocuments 等配置
+		outputData, err := yaml.Marshal(&config)
+		if err != nil {
+			fmt.Printf("警告: 序列化配置失败: %v\n", err)
+		} else {
+			// 写回配置文件
+			if err := os.WriteFile(configPath, outputData, 0644); err != nil {
+				fmt.Printf("警告: 更新配置文件失败: %v\n", err)
+			} else {
+				fmt.Printf("已自动更新配置文件，添加了新的分组名\n")
+			}
+		}
+	}
+
 	if config.Metadata.ProjectName == "" {
 		config.Metadata.ProjectName = "API 文档"
-	}
-	// 设置默认中间件组配置
-	if config.MiddlewareGroup.MiddlewareMap == nil {
-		config.MiddlewareGroup.MiddlewareMap = make(map[string]string)
-	}
-	if config.MiddlewareGroup.DefaultTemplate == "" {
-		config.MiddlewareGroup.DefaultTemplate = "%s"
-	}
-	if config.MiddlewareGroup.NoMiddleware == "" {
-		config.MiddlewareGroup.NoMiddleware = "默认"
 	}
 
 	globalCategoryConfig = &config
@@ -699,40 +672,6 @@ func GetDocuments() []DocumentInfo {
 		return nil
 	}
 	return globalCategoryConfig.AppDocuments
-}
-
-// inferCategory 根据 action 名称推断分类
-// 注意：这是项目特定的业务逻辑，分类映射通过配置文件定义
-// 匹配规则：完全匹配优先级最高，否则使用点号前缀匹配，最后使用前缀作为分类名称
-func inferCategory(actionName string) string {
-	// 配置必须已加载，如果为 nil 说明配置加载失败
-	if globalCategoryConfig == nil {
-		// 如果配置未加载，尝试使用前缀
-		parts := strings.Split(actionName, ".")
-		if len(parts) > 0 {
-			return parts[0]
-		}
-		return actionName
-	}
-
-	// 首先尝试完全匹配（优先级最高）
-	if category, ok := globalCategoryConfig.CategoryMap[actionName]; ok {
-		return category
-	}
-
-	// 然后尝试前缀匹配（使用点号分割）
-	parts := strings.Split(actionName, ".")
-	if len(parts) > 0 {
-		prefix := parts[0]
-		if category, ok := globalCategoryConfig.CategoryMap[prefix]; ok {
-			return category
-		}
-		// 如果前缀匹配失败，直接使用前缀作为分类名称
-		return prefix
-	}
-
-	// 如果没有点号，直接使用 action 名称作为分类
-	return actionName
 }
 
 // getMetadata 获取元数据配置

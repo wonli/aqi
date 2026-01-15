@@ -102,73 +102,52 @@
                     <h2 class="text-xl font-semibold text-gray-800 mb-5">API 列表</h2>
                     <div v-if="docData && docData.files && docData.files.length > 0">
                         <div v-for="file in docData.files" :key="file.fileName">
-                            <div v-for="group in file.middlewareGroups" 
-                                 :key="group.name" 
+                            <div v-for="group in file.groups" 
+                                 :key="group.name || 'ungrouped'" 
                                  v-show="hasMatchingActionsInGroup(group)"
                                  class="mb-3">
-                                <!-- Middleware Group -->
-                                <div class="mb-2">
-                                    <button @click="toggleGroup(group.name)" 
+                                <!-- Group (only show if has name) -->
+                                <div class="mb-2" v-if="group.name">
+                                    <button @click="toggleGroup(group.name || 'ungrouped')" 
                                             class="w-full text-left px-4 py-2.5 flex items-center justify-between text-base font-medium text-gray-800 hover:text-gray-900 transition-colors">
                                         <span>{{ group.name }}</span>
                                         <svg class="w-4 h-4 text-gray-500 transition-transform duration-200" 
-                                             :class="expandedGroups[group.name] ? 'rotate-90' : ''"
+                                             :class="expandedGroups[group.name || 'ungrouped'] ? 'rotate-90' : ''"
                                              fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                                         </svg>
                                     </button>
                                     
-                                    <!-- Categories -->
-                                    <div v-show="expandedGroups[group.name]" class="ml-2 mt-1">
-                                        <div v-for="category in group.categories" 
-                                             :key="category.name" 
-                                             v-show="hasMatchingActionsInCategory(category)"
-                                             class="mb-1">
-                                            <!-- 如果分类下只有一个 action，直接显示 action，不显示分类按钮 -->
-                                            <template v-if="category.actions.length === 1">
-                                                <button v-for="action in category.actions" 
-                                                        :key="action.name"
-                                                        v-show="!filteredActions || filteredActions.has(action.name)"
-                                                        @click="selectAction(action)"
-                                                        :class="[
-                                                            'w-full text-left px-4 py-2 text-sm transition-colors',
-                                                            selectedAction && selectedAction.name === action.name 
-                                                                ? 'text-blue-600 font-medium' 
-                                                                : 'text-gray-700 hover:text-blue-600'
-                                                        ]">
-                                                    {{ action.name }}
-                                                </button>
-                                            </template>
-                                            <!-- 如果分类下有多个 action，显示分类按钮 -->
-                                            <template v-else>
-                                                <button @click="toggleCategory(group.name, category.name)"
-                                                        class="w-full text-left px-4 py-2 flex items-center justify-between text-sm text-gray-700 hover:text-gray-900 transition-colors">
-                                                    <span>{{ category.name }}</span>
-                                                    <svg class="w-4 h-4 text-gray-500 transition-transform duration-200" 
-                                                         :class="expandedCategories[`${group.name}-${category.name}`] ? 'rotate-90' : ''"
-                                                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                                                    </svg>
-                                                </button>
-                                                
-                                                <!-- Actions -->
-                                                <div v-show="expandedCategories[`${group.name}-${category.name}`]" class="ml-2 mt-1">
-                                                    <button v-for="action in category.actions" 
-                                                            :key="action.name"
-                                                            v-show="!filteredActions || filteredActions.has(action.name)"
-                                                            @click="selectAction(action)"
-                                                            :class="[
-                                                                'w-full text-left px-4 py-2 text-sm transition-colors',
-                                                                selectedAction && selectedAction.name === action.name 
-                                                                    ? 'text-blue-600 font-medium' 
-                                                                    : 'text-gray-700 hover:text-blue-600'
-                                                            ]">
-                                                        {{ action.name }}
-                                                    </button>
-                                                </div>
-                                            </template>
-                                        </div>
+                                    <!-- Actions -->
+                                    <div v-show="expandedGroups[group.name || 'ungrouped']" class="ml-2 mt-1">
+                                        <button v-for="action in group.actions" 
+                                                :key="action.name"
+                                                v-show="!filteredActions || filteredActions.has(action.name)"
+                                                @click="selectAction(action)"
+                                                :class="[
+                                                    'w-full text-left px-4 py-2 text-sm transition-colors',
+                                                    selectedAction && selectedAction.name === action.name 
+                                                        ? 'text-blue-600 font-medium' 
+                                                        : 'text-gray-700 hover:text-blue-600'
+                                                ]">
+                                            {{ action.name }}
+                                        </button>
                                     </div>
+                                </div>
+                                <!-- Actions for ungrouped (no group name) -->
+                                <div v-else class="ml-2 mt-1">
+                                    <button v-for="action in group.actions" 
+                                            :key="action.name"
+                                            v-show="!filteredActions || filteredActions.has(action.name)"
+                                            @click="selectAction(action)"
+                                            :class="[
+                                                'w-full text-left px-4 py-2 text-sm transition-colors',
+                                                selectedAction && selectedAction.name === action.name 
+                                                    ? 'text-blue-600 font-medium' 
+                                                    : 'text-gray-700 hover:text-blue-600'
+                                            ]">
+                                        {{ action.name }}
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -251,9 +230,18 @@
                                 <span class="text-gray-500">请求格式:</span>
                                 <code class="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">{{ docData.info.requestFormat }}</code>
                             </div>
-                            <div class="text-sm">
+                            <div class="text-sm mb-2">
                                 <span class="text-gray-500">响应格式:</span>
                                 <code class="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">{{ docData.info.responseFormat }}</code>
+                            </div>
+                            <div class="text-sm">
+                                <span class="text-gray-500">权限要求:</span>
+                                <span class="ml-2 text-gray-900">
+                                    <span v-if="selectedAction.middlewareChain && selectedAction.middlewareChain.length > 0">
+                                        {{ selectedAction.middlewareChain.join(', ') }}
+                                    </span>
+                                    <span v-else class="text-gray-400">无</span>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -680,7 +668,6 @@
                     docData: null,
                     selectedAction: null,
                     expandedGroups: {},
-                    expandedCategories: {},
                     formData: {},
                     serverUrl: '',
                     response: null,
@@ -708,7 +695,8 @@
                     jsonParamsError: '', // JSON 解析错误信息
                     currentWebSocket: null, // 当前 WebSocket 连接
                     currentWebSocketUrl: '', // 当前 WebSocket 连接的 URL
-                    wsReconnectTimer: null // WebSocket 重连定时器
+                    wsReconnectTimer: null, // WebSocket 重连定时器
+                    wsPingTimer: null // WebSocket ping 定时器
                 };
             },
             computed: {
@@ -972,28 +960,18 @@
                     }
                 },
                 initializeExpandedState() {
-                    // 默认所有分组和分类都折叠
-                    // 注意：如果分类下只有一个 action，不需要初始化展开状态（因为不会显示分类按钮）
+                    // 默认所有分组都折叠
                     if (this.docData && this.docData.files) {
                         this.docData.files.forEach(file => {
-                            file.middlewareGroups.forEach(group => {
-                                this.expandedGroups[group.name] = false;
-                                group.categories.forEach(category => {
-                                    // 只有当分类下有多个 action 时，才需要初始化展开状态
-                                    if (category.actions.length > 1) {
-                                        this.expandedCategories[`${group.name}-${category.name}`] = false;
-                                    }
-                                });
+                            file.groups.forEach(group => {
+                                const groupKey = group.name || 'ungrouped';
+                                this.expandedGroups[groupKey] = false;
                             });
                         });
                     }
                 },
                 toggleGroup(groupName) {
                     this.expandedGroups[groupName] = !this.expandedGroups[groupName];
-                },
-                toggleCategory(groupName, categoryName) {
-                    const key = `${groupName}-${categoryName}`;
-                    this.expandedCategories[key] = !this.expandedCategories[key];
                 },
                 selectAction(action) {
                     this.selectedAction = action;
@@ -1037,12 +1015,12 @@
                     }
                     
                     for (const file of this.docData.files) {
-                        for (const group of file.middlewareGroups || []) {
-                            for (const category of group.categories || []) {
-                                for (const action of category.actions || []) {
+                        for (const group of file.groups || []) {
+                            // 先检查直接的actions
+                            if (group.actions && group.actions.length > 0) {
+                                for (const action of group.actions) {
                                     if (action.name === actionName) {
                                         this.selectAction(action);
-                                        // 滚动到顶部
                                         window.scrollTo({ top: 0, behavior: 'smooth' });
                                         return;
                                     }
@@ -1323,18 +1301,36 @@
                         this.currentWebSocket = ws;
                         this.currentWebSocketUrl = url;
                         let hasReceivedResponse = false;
-                        let messageCount = 0;
-                        const maxMessages = 10; // 最多处理 10 条消息
                         
                         ws.onopen = () => {
                             ws.send(JSON.stringify(body));
                             resolve(); // 连接打开并发送消息后立即resolve，不等待响应
+                            
+                            // 启动 ping 定时器，每5秒发送一次 ping 消息
+                            if (this.wsPingTimer) {
+                                clearInterval(this.wsPingTimer);
+                            }
+                            this.wsPingTimer = setInterval(() => {
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({ action: "ping" }));
+                                } else {
+                                    // 连接已关闭，清除定时器
+                                    if (this.wsPingTimer) {
+                                        clearInterval(this.wsPingTimer);
+                                        this.wsPingTimer = null;
+                                    }
+                                }
+                            }, 5000);
                         };
                         
                         ws.onmessage = (event) => {
                             try {
                                 const data = JSON.parse(event.data);
-                                messageCount++;
+                                
+                                // 忽略 ping 消息的响应（pong）
+                                if (data.action === "ping") {
+                                    return;
+                                }
                                 
                                 // 检查是否是错误响应
                                 if (data.code !== undefined && data.code !== 0 && data.code !== 200) {
@@ -1379,6 +1375,12 @@
                         };
                         
                         ws.onclose = (event) => {
+                            // 清除 ping 定时器
+                            if (this.wsPingTimer) {
+                                clearInterval(this.wsPingTimer);
+                                this.wsPingTimer = null;
+                            }
+                            
                             // 清除当前连接引用
                             if (this.currentWebSocket === ws) {
                                 this.currentWebSocket = null;
@@ -1500,8 +1502,14 @@
                         (this.serverUrl.startsWith('ws://') || this.serverUrl.startsWith('wss://')) &&
                         this.serverUrl !== url &&
                         this.currentWebSocket) {
+                        // 清除 ping 定时器
+                        if (this.wsPingTimer) {
+                            clearInterval(this.wsPingTimer);
+                            this.wsPingTimer = null;
+                        }
                         this.currentWebSocket.close();
                         this.currentWebSocket = null;
+                        this.currentWebSocketUrl = '';
                     }
                     this.serverUrl = url;
                 },
@@ -1577,6 +1585,17 @@
                     console.log('切换文档到:', this.currentDocName);
                     this.loadError = null; // 清除之前的错误
                     
+                    // 清理 WebSocket 连接和 ping 定时器
+                    if (this.wsPingTimer) {
+                        clearInterval(this.wsPingTimer);
+                        this.wsPingTimer = null;
+                    }
+                    if (this.currentWebSocket) {
+                        this.currentWebSocket.close();
+                        this.currentWebSocket = null;
+                        this.currentWebSocketUrl = '';
+                    }
+                    
                     if (!this.currentDocName) {
                         const errorMsg = '文档名称为空，无法切换文档';
                         console.error(errorMsg);
@@ -1624,11 +1643,12 @@
                     const tree = { children: {}, actions: [] };
                     const actions = [];
                     
-                    // 遍历所有文件、中间件组、分类和 action
+                    // 遍历所有文件、分组和 action
                     this.docData.files.forEach(file => {
-                        file.middlewareGroups.forEach(group => {
-                            group.categories.forEach(category => {
-                                category.actions.forEach(action => {
+                        file.groups.forEach(group => {
+                            // 处理actions
+                            if (group.actions && group.actions.length > 0) {
+                                group.actions.forEach(action => {
                                     const actionName = action.name;
                                     const parts = actionName.split('.');
                                     
@@ -1652,7 +1672,7 @@
                                         }
                                     });
                                 });
-                            });
+                            }
                         });
                     });
                     
@@ -1695,34 +1715,47 @@
                 saveToHistory(action, params, serverUrl) {
                     if (!action) return;
                     
-                    // 序列化参数用于比较
-                    const paramsStr = JSON.stringify(params || {});
-                    
-                    // 检查历史记录中是否已存在相同的 action 和参数
+                    // 检查历史记录中是否已存在相同的 action（只根据 action 查找，不比较参数）
                     const existingIndex = this.requestHistory.findIndex(h => {
-                        return h.action === action && JSON.stringify(h.params || {}) === paramsStr;
+                        return h.action === action;
                     });
                     
-                    const historyItem = {
-                        id: Date.now().toString(),
-                        action: action,
-                        params: params || {},
-                        serverUrl: serverUrl || this.serverUrl,
-                        timestamp: Date.now(),
-                        pinned: false
-                    };
-                    
                     if (existingIndex !== -1) {
-                        // 如果已存在，更新该记录的时间戳
-                        this.requestHistory[existingIndex] = historyItem;
+                        // 如果已存在，更新该记录的参数、时间戳和服务器地址，但保留置顶状态
+                        const existingItem = this.requestHistory[existingIndex];
+                        existingItem.params = params || {};
+                        existingItem.timestamp = Date.now();
+                        existingItem.serverUrl = serverUrl || this.serverUrl;
+                        // 保留原有的 pinned 状态和 id
                     } else {
                         // 如果不存在，插入新记录
+                        const historyItem = {
+                            id: Date.now().toString(),
+                            action: action,
+                            params: params || {},
+                            serverUrl: serverUrl || this.serverUrl,
+                            timestamp: Date.now(),
+                            pinned: false
+                        };
                         this.requestHistory.unshift(historyItem);
-                        
-                        // 最多保存30组数据
-                        if (this.requestHistory.length > 30) {
-                            this.requestHistory = this.requestHistory.slice(0, 30);
+                    }
+                    
+                    // 确保每个 action 只有一条记录：删除重复的 action 记录（保留第一个，即最新的）
+                    const seenActions = new Set();
+                    this.requestHistory = this.requestHistory.filter(item => {
+                        if (seenActions.has(item.action)) {
+                            // 如果已经见过该 action，删除这条记录
+                            return false;
+                        } else {
+                            // 第一次见到该 action，保留
+                            seenActions.add(item.action);
+                            return true;
                         }
+                    });
+                    
+                    // 最多保存30组数据
+                    if (this.requestHistory.length > 50) {
+                        this.requestHistory = this.requestHistory.slice(0, 50);
                     }
                     
                     // 保存到 localStorage
@@ -1771,12 +1804,11 @@
                     if (this.docData && this.docData.files) {
                         let foundAction = null;
                         for (const file of this.docData.files) {
-                            for (const group of file.middlewareGroups) {
-                                for (const category of group.categories) {
-                                    foundAction = category.actions.find(a => a.name === historyItem.action);
+                            for (const group of file.groups) {
+                                if (group.actions && group.actions.length > 0) {
+                                    foundAction = group.actions.find(a => a.name === historyItem.action);
                                     if (foundAction) break;
                                 }
-                                if (foundAction) break;
                             }
                             if (foundAction) break;
                         }
@@ -1945,14 +1977,12 @@
                     }
                 },
                 collapseAll() {
-                    // 折叠所有分组和分类
+                    // 折叠所有分组
                     if (this.docData && this.docData.files) {
                         this.docData.files.forEach(file => {
-                            file.middlewareGroups.forEach(group => {
-                                this.expandedGroups[group.name] = false;
-                                group.categories.forEach(category => {
-                                    this.expandedCategories[`${group.name}-${category.name}`] = false;
-                                });
+                            file.groups.forEach(group => {
+                                const groupKey = group.name || 'ungrouped';
+                                this.expandedGroups[groupKey] = false;
                             });
                         });
                     }
@@ -1961,17 +1991,18 @@
                     if (!matchedSet || !this.docData || !this.docData.files) return;
                     
                     this.docData.files.forEach(file => {
-                        file.middlewareGroups.forEach(group => {
+                        file.groups.forEach(group => {
+                            const groupKey = group.name || 'ungrouped';
                             let groupHasMatch = false;
-                            group.categories.forEach(category => {
-                                const categoryHasMatch = category.actions.some(a => matchedSet.has(a.name));
-                                if (categoryHasMatch) {
-                                    this.expandedCategories[`${group.name}-${category.name}`] = true;
+                            // 检查actions
+                            if (group.actions && group.actions.length > 0) {
+                                const hasMatch = group.actions.some(a => matchedSet.has(a.name));
+                                if (hasMatch) {
                                     groupHasMatch = true;
                                 }
-                            });
-                            if (groupHasMatch) {
-                                this.expandedGroups[group.name] = true;
+                            }
+                            if (groupHasMatch && groupKey !== 'ungrouped') {
+                                this.expandedGroups[groupKey] = true;
                             }
                         });
                     });
@@ -1985,28 +2016,11 @@
                     if (!this.filteredActions) {
                         return true;
                     }
-                    // 检查分组下是否有任何匹配的 action，并且该 action 所在的分类也有匹配
-                    if (!group.categories || group.categories.length === 0) {
+                    // 检查actions
+                    if (!group.actions || group.actions.length === 0) {
                         return false;
                     }
-                    // 必须至少有一个分类有匹配的 action，分组才显示
-                    for (const category of group.categories) {
-                        if (this.hasMatchingActionsInCategory(category)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                },
-                hasMatchingActionsInCategory(category) {
-                    // 如果没有过滤，显示所有分类
-                    if (!this.filteredActions) {
-                        return true;
-                    }
-                    // 检查分类下是否有任何匹配的 action
-                    if (!category.actions || category.actions.length === 0) {
-                        return false;
-                    }
-                    return category.actions.some(action => this.filteredActions.has(action.name));
+                    return group.actions.some(a => this.filteredActions.has(a.name));
                 }
             }
                     }).mount('#app');

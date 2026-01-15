@@ -14,7 +14,6 @@ type ActionDoc struct {
 	RouterFile      string       // 所属路由文件
 	MiddlewareChain []string     // 中间件链（如 ["Recovery", "App", "Auth"]）
 	MiddlewareGroup string       // 中间件组变量名（"r", "app", "auth", "adm", "admLog" 等）
-	Category        string       // 功能分类（根据名称前缀自动推断）
 	Params          []ParamField // 请求参数列表
 	Returns         ReturnType   // 返回类型
 	Examples        []Example    // 使用示例
