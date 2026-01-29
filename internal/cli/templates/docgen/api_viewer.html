@@ -8,7 +8,7 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script>
         // 文档列表数据（通过模板注入）
-        window.__DOCS_CONFIG__ = {{.DocsConfig}} || [];
+        window.__DOCS_CONFIG__ = JSON.parse('{{.DocsConfig}}') || [];
     </script>
     <style>
         /* 自定义滚动条样式 */
@@ -461,7 +461,19 @@
                                           rows="8"
                                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"></textarea>
                                 <p v-if="jsonParamsError" class="text-xs text-red-500 mt-1">{{ jsonParamsError }}</p>
-                                <p class="text-xs text-gray-500 mt-1">提示：可以直接粘贴 JSON 格式的 params 对象</p>
+                                <!-- 可选参数说明 -->
+                                <div v-if="optionalParams.length > 0" class="mt-1">
+                                    <p class="text-xs font-medium text-gray-700 mb-1">可选参数（未填写时可省略）：</p>
+                                    <ul class="space-y-1">
+                                        <li v-for="param in optionalParams"
+                                            :key="param.Name"
+                                            class="text-xs text-gray-600">
+                                            <span class="font-mono text-gray-800">{{ param.Name }}</span>
+                                            <span class="text-gray-400 ml-1">({{ param.Type || 'any' }})</span>
+                                            <span v-if="param.Description" class="ml-1">- {{ param.Description }}</span>
+                                        </li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -782,6 +794,12 @@
                         params: params
                     }, null, 2);
                 },
+                optionalParams() {
+                    if (!this.selectedAction || !this.selectedAction.params) {
+                        return [];
+                    }
+                    return this.selectedAction.params.filter(param => !param.Required);
+                },
                 formattedResponse() {
                     if (!this.response) return '';
                     return JSON.stringify(this.response, null, 2);
@@ -834,6 +852,8 @@
                 (async () => {
                     // 从注入配置发现并加载文档（内部会设置 loadError）
                     await this.discoverDocuments();
+                    // 优先从 URL 中恢复状态（doc/action/mode/params）
+                    await this.applyUrlState();
                     // 从 localStorage 加载已保存的服务器地址（需要在 discoverDocuments 之后，因为需要 currentDocName）
                     this.loadSavedServers();
                     // 从 localStorage 加载历史记录（需要在 discoverDocuments 之后，因为需要 currentDocName）
@@ -841,6 +861,8 @@
 
                     // 标记应用已就绪：隐藏 Loading，显示页面
                     document.body.classList.add('app-ready');
+                    // 根据最终状态更新 URL，确保地址栏与当前页面一致
+                    this.updateUrlQuery();
                 })();
                 
                 // 添加全局 ESC 键监听，用于关闭模态框
@@ -892,6 +914,7 @@
                             
                             // 加载默认文档
                             await this.loadDocument();
+                            // 初始化完成后先不要立刻覆盖 URL，交由 applyUrlState/后续交互更新
                         } else {
                             console.warn('未发现任何文档');
                             this.loadError = '未找到任何文档文件。请确保已运行文档生成命令。';
@@ -899,6 +922,72 @@
                     } catch (error) {
                         console.error('发现文档失败:', error);
                         this.loadError = `无法获取文档列表: ${error.message}`;
+                    }
+                },
+                async applyUrlState() {
+                    try {
+                        const url = new URL(window.location.href);
+                        const sp = url.searchParams;
+
+                        // 根据 URL 中的 doc 切换文档
+                        const docFromUrl = sp.get('doc');
+                        if (docFromUrl && this.availableDocs && this.availableDocs.some(d => d.name === docFromUrl)) {
+                            if (this.currentDocName !== docFromUrl) {
+                                this.currentDocName = docFromUrl;
+                                await this.switchDocument();
+                            } else if (!this.docData) {
+                                await this.loadDocument();
+                            }
+                        }
+
+                        // 在文档数据可用后，根据 action 选择接口
+                        const actionFromUrl = sp.get('action');
+                        if (actionFromUrl) {
+                            this.selectActionByName(actionFromUrl);
+                        }
+
+                        // 参数编辑模式
+                        const modeFromUrl = sp.get('mode');
+                        if (modeFromUrl === 'json' || modeFromUrl === 'form') {
+                            this.paramsEditMode = modeFromUrl;
+                        }
+                        if (actionFromUrl) {
+                            this.searchQuery = actionFromUrl;
+                            this.onSearchInput();
+                        } else {
+                            this.searchQuery = '';
+                            this.onSearchInput();
+                        }
+                    } catch (e) {
+                        console.error('应用 URL 状态失败:', e);
+                    }
+                },
+                updateUrlQuery() {
+                    try {
+                        const url = new URL(window.location.href);
+                        const sp = url.searchParams;
+
+                        if (this.currentDocName) {
+                            sp.set('doc', this.currentDocName);
+                        } else {
+                            sp.delete('doc');
+                        }
+
+                        if (this.selectedAction && this.selectedAction.name) {
+                            sp.set('action', this.selectedAction.name);
+                        } else {
+                            sp.delete('action');
+                        }
+
+                        if (this.paramsEditMode) {
+                            sp.set('mode', this.paramsEditMode);
+                        } else {
+                            sp.delete('mode');
+                        }
+
+                        window.history.replaceState(null, '', url.toString());
+                    } catch (e) {
+                        console.error('更新 URL 查询参数失败:', e);
                     }
                 },
                 async loadDocument() {
@@ -1007,6 +1096,8 @@
                     } else {
                         this.jsonParamsText = '{}';
                     }
+                    // 选择 action 后更新 URL
+                    this.updateUrlQuery();
                 },
                 selectActionByName(actionName) {
                     // 从文档数据中查找指定名称的 action
@@ -1104,6 +1195,7 @@
                         this.parseJsonParams();
                         this.paramsEditMode = 'form';
                     }
+                    this.updateUrlQuery();
                 },
                 parseJsonParams() {
                     this.jsonParamsError = '';
@@ -1151,6 +1243,7 @@
                         }
                     } catch (e) {
                         this.jsonParamsError = 'JSON 格式错误: ' + e.message;
+                        return;
                     }
                 },
                 setNestedValue(obj, path, value) {
@@ -1623,6 +1716,8 @@
                     this.loadFromHistory();
                     // 加载对应文档的服务器列表
                     this.loadSavedServers();
+                    // 同步当前状态到 URL
+                    this.updateUrlQuery();
                 },
                 saveLastSelectedDoc() {
                     try {
@@ -1850,6 +1945,8 @@
                                 if (this.paramsEditMode === 'form') {
                                     this.parseJsonParams();
                                 }
+                                // 应用历史记录后，同步状态到 URL
+                                this.updateUrlQuery();
                             }
                         } else {
                             console.warn('找不到对应的 action: ' + historyItem.action);
