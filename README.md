@@ -6,6 +6,17 @@ Aqi is a Golang Websocket business framework that supports net/http, gin, chi, e
 
 `go get -u github.com/wonli/aqi`
 
+#### AQI CLI
+
+Install the `aqi` command-line tool:
+
+```bash
+go install github.com/wonli/aqi/cmd/aqi@latest
+```
+
+Run `aqi` to see available commands (new, docgen, service, version, etc.).
+
+
 [简体中文](./docs/zh-CN.md)
 
 ### Usage
