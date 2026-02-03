@@ -2,19 +2,22 @@
 
 Aqi是一个Golang Websocket业务框架，支持`net/http`, `gin`, `chi`等，底层整合了`viper`, `gorm`, `gobwa/ws`, `gjson`, `zap`, `asynq`等优秀第三方库，方便快速展开Websocket业务
 
-### 安装
+### 快速开始
 
-`go get -u github.com/wonli/aqi`
-
-#### AQI CLI
-
-安装 `aqi` 命令行工具：
+三步安装 `aqi` CLI 并创建项目：
 
 ```bash
+# 1. 安装 aqi
 go install github.com/wonli/aqi/cmd/aqi@latest
+
+# 2. 生成项目
+aqi new myapp && cd myapp
+
+# 3. 运行
+go run . api
 ```
 
-运行 `aqi` 可查看可用命令（new、docgen、service、version 等）。
+首次运行会自动生成 `config-dev.yaml` 配置文件。API 和 WebSocket 服务默认监听端口 `2015`（可在配置文件中修改）。使用 [wscat](https://github.com/websockets/wscat) 连接 `ws://localhost:2015/ws` 可测试内置的 `hi` 动作。
 
 
 

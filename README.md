@@ -2,19 +2,22 @@
 
 Aqi is a Golang Websocket business framework that supports net/http, gin, chi, etc. It integrates underlying third-party libraries such as viper, gorm, gobwa/ws, gjson, zap, asynq, which facilitates the rapid development of Websocket applications.
 
-### Installation
+### Quick Start
 
-`go get -u github.com/wonli/aqi`
-
-#### AQI CLI
-
-Install the `aqi` command-line tool:
+Install the `aqi` CLI and create a project in three steps:
 
 ```bash
+# 1. Install aqi
 go install github.com/wonli/aqi/cmd/aqi@latest
+
+# 2. Generate project
+aqi new myapp && cd myapp
+
+# 3. Run
+go run . api
 ```
 
-Run `aqi` to see available commands (new, docgen, service, version, etc.).
+On first run, `config-dev.yaml` is auto-generated. The API and WebSocket server start on port `2015` (configurable in the config file). Use [wscat](https://github.com/websockets/wscat) to connect to `ws://localhost:2015/ws` and test the built-in `hi` action.
 
 
 [简体中文](./docs/zh-CN.md)
