@@ -19,7 +19,6 @@ go run . api
 
 On first run, `config-dev.yaml` is auto-generated. The API and WebSocket server start on port `2015` (configurable in the config file). Use [wscat](https://github.com/websockets/wscat) to connect to `ws://localhost:2015/ws` and test the built-in `hi` action.
 
-
 [简体中文](./docs/zh-CN.md)
 
 ### Usage
@@ -220,5 +219,21 @@ LDFLAGS = "-X '$(FLAGS_PKG).BuildDate=$(BUILD_DATE)' \
 		   -extldflags '-static -s -w'"
 ```
 
+### API Documentation
+
+Generate API docs from your router files with `aqi docgen init`:
+
+```bash
+# In project root (e.g. myapp/)
+aqi docgen init
+```
+
+This creates a `docs/` directory with:
+- `doc-config.yaml` – doc config and categories
+- `api_viewer.html` – web viewer for API docs
+- `docgen.go` – embeddable doc server
+- `cmd_api_*.json` – parsed action docs from `internal/router`
+
+Options: `-r` router dir (default `./internal/router`), `-f` format (`json` or `markdown`), `-p` package name.
 
 

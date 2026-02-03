@@ -19,8 +19,6 @@ go run . api
 
 首次运行会自动生成 `config-dev.yaml` 配置文件。API 和 WebSocket 服务默认监听端口 `2015`（可在配置文件中修改）。使用 [wscat](https://github.com/websockets/wscat) 连接 `ws://localhost:2015/ws` 可测试内置的 `hi` 动作。
 
-
-
 ### 使用
 
 第一次运行时会在工作目录下自动生成`config-dev.yaml`配置文件，你可以配置程序启动端口、数据库等信息。
@@ -221,5 +219,21 @@ LDFLAGS = "-X '$(FLAGS_PKG).BuildDate=$(BUILD_DATE)' \
 		   -extldflags '-static -s -w'"
 ```
 
+### API 文档生成
+
+使用 `aqi docgen init` 从路由文件生成 API 文档：
+
+```bash
+# 在项目根目录下（如 myapp/）
+aqi docgen init
+```
+
+会在 `docs/` 目录生成：
+- `doc-config.yaml` – 文档配置与分类
+- `api_viewer.html` – API 文档网页查看器
+- `docgen.go` – 可嵌入的文档服务
+- `cmd_api_*.json` – 从 `internal/router` 解析的 action 文档
+
+可选参数：`-r` 路由目录（默认 `./internal/router`）、`-f` 输出格式（`json` 或 `markdown`）、`-p` 包名。
 
 
