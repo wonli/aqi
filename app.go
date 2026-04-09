@@ -45,7 +45,9 @@ type AppConfig struct {
 
 	Configs map[string]any
 
-	Guard ws.GuardFunc //守护回调
+	AppConfigBlock string
+
+	Guard      ws.GuardFunc //守护回调
 	HttpServer http.Handler //http server
 
 	RemoteProvider *RemoteProvider //远程配置支持etcd, consul

@@ -18,18 +18,13 @@ func (a *AppConfig) IsDevMode() bool {
 }
 
 func (a *AppConfig) WriteDefaultConfig() error {
-	workerDir, err := os.Getwd()
+	ctx, err := config.GetDefaultConfig(a.AppConfigBlock)
 	if err != nil {
 		return err
 	}
 
-	ctx, err := config.GetDefaultConfig()
-	if err != nil {
-		return err
-	}
-
-	filename := filepath.Join(workerDir, a.ConfigName+"."+a.ConfigType)
-	err = os.WriteFile(filename, []byte(ctx), 0755)
+	filename := filepath.Join(a.ConfigPath, a.ConfigName+"."+a.ConfigType)
+	err = os.WriteFile(filename, []byte(ctx), 0644)
 	if err != nil {
 		return err
 	}

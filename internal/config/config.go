@@ -5,15 +5,17 @@ import (
 	"crypto/rand"
 	_ "embed"
 	"encoding/hex"
-	"html/template"
+	"strings"
+	"text/template"
 )
 
-//go:embed config.yaml
+//go:embed config.yaml.tmpl
 var defaultConfig []byte
 
 // DefaultConfigTpl store template data.
 type DefaultConfigTpl struct {
-	JwtSecurity string
+	JwtSecurity    string
+	AppConfigBlock string
 }
 
 func generateRandomHex(n int) (string, error) {
@@ -25,14 +27,15 @@ func generateRandomHex(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func GetDefaultConfig() (string, error) {
+func GetDefaultConfig(appConfigBlock string) (string, error) {
 	jwtSecurity, err := generateRandomHex(16)
 	if err != nil {
 		return "", err
 	}
 
 	config := DefaultConfigTpl{
-		JwtSecurity: jwtSecurity,
+		JwtSecurity:    jwtSecurity,
+		AppConfigBlock: strings.TrimSpace(appConfigBlock),
 	}
 
 	tmpl, err := template.New("config").Parse(string(defaultConfig))

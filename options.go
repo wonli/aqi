@@ -25,6 +25,13 @@ func DataPath(path string) Option {
 	}
 }
 
+func AppConfigBlock(block string) Option {
+	return func(config *AppConfig) error {
+		config.AppConfigBlock = strings.TrimSpace(block)
+		return nil
+	}
+}
+
 func ConfigFile(file string) Option {
 	if !filepath.IsAbs(file) {
 		workerDir, err := os.Getwd()

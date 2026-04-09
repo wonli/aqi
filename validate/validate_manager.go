@@ -2,7 +2,6 @@ package validate
 
 import (
 	"errors"
-	"fmt"
 
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
@@ -62,7 +61,7 @@ func (g *Manager) Translator(e error) error {
 	for _, err := range errs {
 		namespace := err.Namespace()
 		if s, ok := errorsTranslations[namespace]; ok {
-			return fmt.Errorf(s)
+			return errors.New(s)
 		}
 	}
 

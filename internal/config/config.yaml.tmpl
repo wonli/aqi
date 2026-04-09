@@ -2,6 +2,8 @@ port: 2015
 devMode: true
 jwtSecurity: {{.JwtSecurity}}
 jwtLifetime: 30d
+{{- if .AppConfigBlock}}
+{{.AppConfigBlock}}{{- end}}
 log:
   logFile: app.log
   logPath: logs
