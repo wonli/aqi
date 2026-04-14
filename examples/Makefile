@@ -8,10 +8,15 @@ BUILD_PATH := ./dist
 BUILD_DATE = $(shell date +'%F %T')
 
 # git versions
+GIT_BRANCH = -
+GIT_COMMIT = -
+GIT_REVISION = -
+
+ifneq ($(wildcard .git),)
 GIT_BRANCH = $(shell git rev-parse --abbrev-ref HEAD)
 GIT_COMMIT = $(shell git rev-list --count HEAD)
 GIT_REVISION = $(shell git rev-parse --short HEAD)
-GIT_COMMITAT = $(shell git --no-pager log -1 --format="%at")
+endif
 
 # flags
 FLAGS_PKG = github.com/wonli/aqi
@@ -19,7 +24,7 @@ LDFLAGS = "-X '$(FLAGS_PKG).BuildDate=$(BUILD_DATE)' \
 		   -X '$(FLAGS_PKG).Branch=$(GIT_BRANCH)' \
 		   -X '$(FLAGS_PKG).CommitVersion=$(GIT_COMMIT)' \
 		   -X '$(FLAGS_PKG).Revision=$(GIT_REVISION)' \
-		   -extldflags '-static -s -w'"
+		   -s -w"
 
 # params
 GO_FLAGS = -ldflags $(LDFLAGS) -trimpath -tags netgo

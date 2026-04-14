@@ -216,7 +216,7 @@ LDFLAGS = "-X '$(FLAGS_PKG).BuildDate=$(BUILD_DATE)' \
 		   -X '$(FLAGS_PKG).Branch=$(GIT_BRANCH)' \
 		   -X '$(FLAGS_PKG).CommitVersion=$(GIT_COMMIT)' \
 		   -X '$(FLAGS_PKG).Revision=$(GIT_REVISION)' \
-		   -extldflags '-static -s -w'"
+		   -s -w"
 ```
 
 ### API 文档生成
@@ -235,5 +235,4 @@ aqi docgen init
 - `cmd_api_*.json` – 从 `internal/router` 解析的 action 文档
 
 可选参数：`-r` 路由目录（默认 `./internal/router`）、`-f` 输出格式（`json` 或 `markdown`）、`-p` 包名。
-
 

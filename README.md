@@ -216,7 +216,7 @@ LDFLAGS = "-X '$(FLAGS_PKG).BuildDate=$(BUILD_DATE)' \
 		   -X '$(FLAGS_PKG).Branch=$(GIT_BRANCH)' \
 		   -X '$(FLAGS_PKG).CommitVersion=$(GIT_COMMIT)' \
 		   -X '$(FLAGS_PKG).Revision=$(GIT_REVISION)' \
-		   -extldflags '-static -s -w'"
+		   -s -w"
 ```
 
 ### API Documentation
@@ -235,5 +235,4 @@ This creates a `docs/` directory with:
 - `cmd_api_*.json` – parsed action docs from `internal/router`
 
 Options: `-r` router dir (default `./internal/router`), `-f` format (`json` or `markdown`), `-p` package name.
-
 

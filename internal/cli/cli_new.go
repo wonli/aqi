@@ -5,7 +5,9 @@ import (
 	"html/template"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -18,14 +20,15 @@ var newCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		projectName := args[0]
+		projectDir := projectDirName(projectName)
 
 		packageName := projectName
 		if packageNameFlag != "" {
 			packageName = packageNameFlag
 		}
 
-		createDir(projectName)
-		createProject(projectName, packageName)
+		createDir(projectDir)
+		createProject(projectDir, packageName)
 	},
 }
 
@@ -34,7 +37,13 @@ func init() {
 	rootCmd.AddCommand(newCmd)
 }
 
-func createDir(projectName string) {
+func projectDirName(projectName string) string {
+	projectName = strings.TrimRight(projectName, `/\`)
+	projectName = strings.ReplaceAll(projectName, `\`, "/")
+	return path.Base(projectName)
+}
+
+func createDir(projectDir string) {
 	// 检查目录是否存在
 	dirs := []struct {
 		dirName string
@@ -48,7 +57,7 @@ func createDir(projectName string) {
 	}
 
 	for _, d := range dirs {
-		dirPath := filepath.Join(projectName, d.dirName)
+		dirPath := filepath.Join(projectDir, d.dirName)
 		if err := os.MkdirAll(dirPath, 0755); err != nil {
 			fmt.Printf("Error creating directory: %v\n", err)
 			os.Exit(1)
@@ -58,23 +67,7 @@ func createDir(projectName string) {
 
 func createProject(name, packageName string) {
 	// 复制模板文件
-	templates := []struct {
-		templatePath string
-		outputPath   string
-	}{
-		{"templates/default/main.go.tmpl", "main.go"},
-		{"templates/default/go.mod.tmpl", "go.mod"},
-		{"templates/default/makefile.tmpl", "Makefile"},
-		{"templates/default/cmd/api.go.tmpl", "cmd/api.go"},
-		{"templates/default/cmd/dal.go.tmpl", "cmd/dal.go"},
-		{"templates/default/cmd/boot.go.tmpl", "cmd/boot.go"},
-		{"templates/default/dbc/dbc.go.tmpl", "internal/dbc/dbc.go"},
-		{"templates/default/middlewares/app.go.tmpl", "internal/middlewares/app.go"},
-		{"templates/default/middlewares/recovery.go.tmpl", "internal/middlewares/recovery.go"},
-		{"templates/default/middlewares/cors.go.tmpl", "internal/middlewares/cors.go"},
-		{"templates/default/router/action.go.tmpl", "internal/router/action.go"},
-		{"templates/default/router/api.go.tmpl", "internal/router/api.go"},
-	}
+	templates := projectTemplates()
 
 	for _, t := range templates {
 		// 从嵌入的文件系统读取模板
@@ -97,11 +90,7 @@ func createProject(name, packageName string) {
 			os.Exit(1)
 		}
 
-		data := struct {
-			PackageName string
-		}{
-			PackageName: packageName,
-		}
+		data := newProjectTemplateData(name, packageName)
 
 		if err := tmpl.Execute(outputFile, data); err != nil {
 			fmt.Printf("Error executing template: %v\n", err)
@@ -117,6 +106,40 @@ func createProject(name, packageName string) {
 	}
 
 	fmt.Printf("Successfully created project: %s\n", name)
+}
+
+func newProjectTemplateData(name, packageName string) any {
+	return struct {
+		PackageName string
+		AppName     string
+	}{
+		PackageName: packageName,
+		AppName:     filepath.Base(name),
+	}
+}
+
+func projectTemplates() []struct {
+	templatePath string
+	outputPath   string
+} {
+	return []struct {
+		templatePath string
+		outputPath   string
+	}{
+		{"templates/default/gitignore.tmpl", ".gitignore"},
+		{"templates/default/main.go.tmpl", "main.go"},
+		{"templates/default/go.mod.tmpl", "go.mod"},
+		{"templates/default/makefile.tmpl", "Makefile"},
+		{"templates/default/cmd/api.go.tmpl", "cmd/api.go"},
+		{"templates/default/cmd/dal.go.tmpl", "cmd/dal.go"},
+		{"templates/default/cmd/boot.go.tmpl", "cmd/boot.go"},
+		{"templates/default/dbc/dbc.go.tmpl", "internal/dbc/dbc.go"},
+		{"templates/default/middlewares/app.go.tmpl", "internal/middlewares/app.go"},
+		{"templates/default/middlewares/recovery.go.tmpl", "internal/middlewares/recovery.go"},
+		{"templates/default/middlewares/cors.go.tmpl", "internal/middlewares/cors.go"},
+		{"templates/default/router/action.go.tmpl", "internal/router/action.go"},
+		{"templates/default/router/api.go.tmpl", "internal/router/api.go"},
+	}
 }
 
 // runGoModTidy 在指定目录先更新依赖然后执行
