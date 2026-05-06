@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"context"
 	"math"
 )
 
@@ -15,6 +16,8 @@ type Context struct {
 
 	index    int8
 	handlers HandlersChain
+
+	ctx context.Context
 
 	logs []string
 
@@ -35,4 +38,25 @@ func (c *Context) Next() {
 // Abort 放弃调用后续方法
 func (c *Context) Abort() {
 	c.index = abortIndex
+}
+
+func (c *Context) Context() context.Context {
+	if c == nil || c.ctx == nil {
+		return context.Background()
+	}
+
+	return c.ctx
+}
+
+func (c *Context) WithContext(ctx context.Context) {
+	if c == nil {
+		return
+	}
+
+	if ctx == nil {
+		c.ctx = context.Background()
+		return
+	}
+
+	c.ctx = ctx
 }

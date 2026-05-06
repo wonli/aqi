@@ -1,8 +1,10 @@
 package ws
 
 import (
-	"github.com/tidwall/gjson"
+	"context"
 	"time"
+
+	"github.com/tidwall/gjson"
 )
 
 func Dispatcher(c *Client, request string) {
@@ -43,11 +45,11 @@ func Dispatcher(c *Client, request string) {
 		c.LastHeartbeatTime = t
 	}
 
-    handlers := InitManager().Handlers(req.Action)
-    if len(handlers) == 0 {
-        c.SendActionMsg(&Action{Action: req.Action, Code: -1005, Msg: "request not supported"})
-        return
-    }
+	handlers := InitManager().Handlers(req.Action)
+	if len(handlers) == 0 {
+		c.SendActionMsg(&Action{Action: req.Action, Code: -1005, Msg: "request not supported"})
+		return
+	}
 
 	ctx := &Context{
 		Id:     req.Id,
@@ -58,9 +60,14 @@ func Dispatcher(c *Client, request string) {
 		Server: wss,
 
 		handlers: handlers,
+		ctx:      context.Background(),
 
 		language:   "zh",
 		defaultLng: "zh",
+	}
+
+	if c.HttpRequest != nil {
+		ctx.ctx = c.HttpRequest.Context()
 	}
 
 	defer ctx.FlushLog()
