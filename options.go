@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/wonli/aqi/telemetry"
 	"github.com/wonli/aqi/ws"
 )
 
@@ -88,6 +89,13 @@ func WatchHandler(handler func()) Option {
 func Guard(fn ws.GuardFunc) Option {
 	return func(config *AppConfig) error {
 		config.Guard = fn
+		return nil
+	}
+}
+
+func Telemetry(provider telemetry.Provider) Option {
+	return func(config *AppConfig) error {
+		config.Telemetry = provider
 		return nil
 	}
 }

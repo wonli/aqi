@@ -203,6 +203,77 @@ r1 := wsr.Use(logMiddleware())
 
 This way, the console will print logs before and after each request.
 
+### OpenTelemetry
+
+`aqi` can integrate with OpenTelemetry through the built-in telemetry middleware and the standard `context.Context` already carried by `ws.Context`.
+The `aqi` repository itself only provides the telemetry abstraction and does not import OpenTelemetry packages directly.
+
+```go
+package main
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/wonli/aqi"
+	"github.com/wonli/aqi/middlewares"
+	"github.com/wonli/aqi/telemetry"
+	"github.com/wonli/aqi/ws"
+)
+
+type myProvider struct{}
+
+type mySpan struct{}
+
+func (myProvider) Start(ctx context.Context, name string, fields telemetry.Fields) (context.Context, telemetry.Span) {
+	// Bridge this call to your OpenTelemetry setup in the business project.
+	return telemetry.ContextWithSpan(ctx, mySpan{}), mySpan{}
+}
+
+func (mySpan) SetFields(fields telemetry.Fields)      {}
+func (mySpan) RecordError(err error)                  {}
+func (mySpan) SetStatus(code telemetry.StatusCode, msg string) {}
+func (mySpan) End()                                   {}
+
+func main() {
+	app := aqi.Init(
+		aqi.ConfigFile("config.yaml"),
+		aqi.HttpServer("Aqi", "port"),
+		aqi.Telemetry(myProvider{}),
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", ws.HttpHandler)
+
+	wsr := ws.NewRouter().Use(
+		middlewares.Telemetry(),
+		middlewares.Recovery(),
+	)
+
+	wsr.Add("order.create", func(a *ws.Context) {
+		a.Observe(map[string]any{
+			"shop_id":    "shop-1",
+			"order_type": "normal",
+		})
+
+		ctx := a.Context()
+		_ = ctx // pass ctx to DB/HTTP/RPC clients here
+
+		a.SendOk()
+	})
+
+	app.WithHttpServer(mux)
+	app.Start()
+}
+```
+
+Notes:
+
+- Put `middlewares.Telemetry()` before `middlewares.Recovery()` so panic information is recorded on the active span before the span ends.
+- Use `a.Observe(...)` only for a small whitelist of business fields.
+- Pass `a.Context()` downstream to continue the trace across DB, HTTP, or RPC calls.
+- If you want OpenTelemetry, implement `telemetry.Provider` in your business project or a separate integration module.
+
 
 
 ### Production Mode
@@ -235,4 +306,3 @@ This creates a `docs/` directory with:
 - `cmd_api_*.json` – parsed action docs from `internal/router`
 
 Options: `-r` router dir (default `./internal/router`), `-f` format (`json` or `markdown`), `-p` package name.
-

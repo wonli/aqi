@@ -15,6 +15,7 @@ import (
 
 	"github.com/wonli/aqi/internal/config"
 	"github.com/wonli/aqi/logger"
+	"github.com/wonli/aqi/telemetry"
 	"github.com/wonli/aqi/validate"
 	"github.com/wonli/aqi/ws"
 )
@@ -49,6 +50,7 @@ type AppConfig struct {
 
 	Guard      ws.GuardFunc //守护回调
 	HttpServer http.Handler //http server
+	Telemetry  telemetry.Provider
 
 	RemoteProvider *RemoteProvider //远程配置支持etcd, consul
 
@@ -65,6 +67,7 @@ func Init(options ...Option) *AppConfig {
 		ServerPort: "1091",
 		LogPathKey: "log",
 		DataPath:   "data",
+		Telemetry:  telemetry.NewNoopProvider(),
 	}
 
 	for _, opt := range options {
@@ -215,6 +218,8 @@ func Init(options ...Option) *AppConfig {
 	if acf.Guard != nil {
 		ws.SetGuardFunc(acf.Guard)
 	}
+
+	telemetry.SetProvider(acf.Telemetry)
 
 	//初始化hub
 	ws.InitManager()

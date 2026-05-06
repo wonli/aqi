@@ -8,6 +8,7 @@ import (
 
 	"github.com/wonli/aqi"
 	"github.com/wonli/aqi/mcp"
+	"github.com/wonli/aqi/middlewares"
 	"github.com/wonli/aqi/ws"
 )
 
@@ -28,8 +29,11 @@ func main() {
 	})
 
 	// Router
-	wsr := ws.NewRouter()
+	wsr := ws.NewRouter().Use(middlewares.Telemetry(), middlewares.Recovery())
 	wsr.Add("hi", func(a *ws.Context) {
+		a.Observe(map[string]any{
+			"demo": true,
+		})
 		a.Send(ws.H{
 			"hi": time.Now(),
 		})

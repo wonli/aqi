@@ -203,6 +203,77 @@ r1 := wsr.Use(logMiddleware())
 
 这样控制台在每个请求前后都会打印日志
 
+### OpenTelemetry
+
+`aqi` 现在可以通过内置 telemetry 中间件和标准 `context.Context` 对接 OpenTelemetry。
+主仓库只提供 telemetry 抽象，不直接引入 OpenTelemetry 依赖。
+
+```go
+package main
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/wonli/aqi"
+	"github.com/wonli/aqi/middlewares"
+	"github.com/wonli/aqi/telemetry"
+	"github.com/wonli/aqi/ws"
+)
+
+type myProvider struct{}
+
+type mySpan struct{}
+
+func (myProvider) Start(ctx context.Context, name string, fields telemetry.Fields) (context.Context, telemetry.Span) {
+	// 在业务项目里把这里桥接到你自己的 OpenTelemetry 初始化逻辑。
+	return telemetry.ContextWithSpan(ctx, mySpan{}), mySpan{}
+}
+
+func (mySpan) SetFields(fields telemetry.Fields)      {}
+func (mySpan) RecordError(err error)                  {}
+func (mySpan) SetStatus(code telemetry.StatusCode, msg string) {}
+func (mySpan) End()                                   {}
+
+func main() {
+	app := aqi.Init(
+		aqi.ConfigFile("config.yaml"),
+		aqi.HttpServer("Aqi", "port"),
+		aqi.Telemetry(myProvider{}),
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", ws.HttpHandler)
+
+	wsr := ws.NewRouter().Use(
+		middlewares.Telemetry(),
+		middlewares.Recovery(),
+	)
+
+	wsr.Add("order.create", func(a *ws.Context) {
+		a.Observe(map[string]any{
+			"shop_id":    "shop-1",
+			"order_type": "normal",
+		})
+
+		ctx := a.Context()
+		_ = ctx // 继续透传给 DB/HTTP/RPC 客户端
+
+		a.SendOk()
+	})
+
+	app.WithHttpServer(mux)
+	app.Start()
+}
+```
+
+说明：
+
+- `middlewares.Telemetry()` 要放在 `middlewares.Recovery()` 前面，这样 panic 才能在 span 结束前被记录。
+- `a.Observe(...)` 只建议上报少量白名单业务字段。
+- 下游数据库、HTTP、RPC 调用统一透传 `a.Context()`，链路会继续向下追踪。
+- 如果你要接 OpenTelemetry，建议在业务项目或单独集成模块里实现 `telemetry.Provider`。
+
 
 
 ### 生产模式
@@ -235,4 +306,3 @@ aqi docgen init
 - `cmd_api_*.json` – 从 `internal/router` 解析的 action 文档
 
 可选参数：`-r` 路由目录（默认 `./internal/router`）、`-f` 输出格式（`json` 或 `markdown`）、`-p` 包名。
-
