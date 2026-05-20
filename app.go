@@ -1,6 +1,7 @@
 package aqi
 
 import (
+	"errors"
 	"fmt"
 
 	"net/http"
@@ -110,6 +111,11 @@ func Init(options ...Option) *AppConfig {
 	err := viper.ReadInConfig()
 	if err != nil {
 		if acf.RemoteProvider == nil {
+			if !isConfigFileNotFound(err) {
+				color.Red("Failed to read config file: %s", err.Error())
+				os.Exit(1)
+			}
+
 			err = acf.WriteDefaultConfig()
 			if err != nil {
 				color.Red("Error gen default config file: %s", err.Error())
@@ -224,4 +230,9 @@ func Init(options ...Option) *AppConfig {
 	//初始化hub
 	ws.InitManager()
 	return acf
+}
+
+func isConfigFileNotFound(err error) bool {
+	var configFileNotFoundError viper.ConfigFileNotFoundError
+	return errors.As(err, &configFileNotFoundError)
 }
