@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -39,6 +40,8 @@ type Client struct {
 
 	HttpRequest *http.Request
 	HttpWriter  http.ResponseWriter
+	ctx         context.Context
+	cancel      context.CancelFunc
 
 	User              *User     //关联用户
 	Scope             string    //登录jwt scope, 用于判断用户从哪里登录的
@@ -63,6 +66,25 @@ type Client struct {
 	recentLogs  [100]string
 	recentIdx   int
 	recentCount int
+}
+
+// initContext creates a context whose lifetime follows the WebSocket
+// connection instead of the HTTP request used to perform the upgrade. The
+// HTTP handler returns immediately after the upgrade, which cancels the
+// request context while the WebSocket remains active.
+func (c *Client) initContext(parent context.Context) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	c.ctx, c.cancel = context.WithCancel(context.WithoutCancel(parent))
+}
+
+// Context returns the context associated with the WebSocket connection.
+func (c *Client) Context() context.Context {
+	if c == nil || c.ctx == nil {
+		return context.Background()
+	}
+	return c.ctx
 }
 
 // Reader 读取
@@ -202,6 +224,9 @@ func (c *Client) Close() {
 	if !c.Closed {
 		//防止重复关闭
 		c.Closed = true
+		if c.cancel != nil {
+			c.cancel()
+		}
 
 		//关闭通道
 		close(c.Send)

@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"context"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -60,14 +59,10 @@ func Dispatcher(c *Client, request string) {
 		Server: wss,
 
 		handlers: handlers,
-		ctx:      context.Background(),
+		ctx:      c.Context(),
 
 		language:   "zh",
 		defaultLng: "zh",
-	}
-
-	if c.HttpRequest != nil {
-		ctx.ctx = c.HttpRequest.Context()
 	}
 
 	defer ctx.FlushLog()
