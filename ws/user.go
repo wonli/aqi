@@ -61,33 +61,47 @@ func (u *User) UnsubTopic(topicId string) int {
 
 	topic, ok := u.SubTopics[topicId]
 	if ok {
-		// 从主题订阅集合中移除该用户
 		if topic != nil {
 			topic.RemoveSubUser(u.Suid)
 		}
-		// 从用户侧映射移除该主题
 		delete(u.SubTopics, topicId)
 	}
 
 	return len(u.SubTopics)
 }
 
-// UnsubAllTopics 取消用户的所有主题订阅（用户侧与主题侧同时清理）
 func (u *User) UnsubAllTopics() int {
 	u.Lock()
 	defer u.Unlock()
 
 	for topicId, topic := range u.SubTopics {
 		if topic != nil {
-			// 从主题订阅集合中移除该用户
 			topic.RemoveSubUser(u.Suid)
 		}
-
-		// 从用户侧映射移除该主题
 		delete(u.SubTopics, topicId)
 	}
 
 	return len(u.SubTopics)
+}
+
+// SetLastHeartbeat updates the user's latest client heartbeat time.
+func (u *User) SetLastHeartbeat(t time.Time) {
+	if u == nil {
+		return
+	}
+	u.Lock()
+	u.LastHeartbeatTime = t
+	u.Unlock()
+}
+
+// LastHeartbeat returns the user's latest client heartbeat time.
+func (u *User) LastHeartbeat() time.Time {
+	if u == nil {
+		return time.Time{}
+	}
+	u.RLock()
+	defer u.RUnlock()
+	return u.LastHeartbeatTime
 }
 
 // AppLogin 用户APP客户端登录
@@ -96,16 +110,15 @@ func (u *User) appLogin(appId string, client *Client) error {
 
 	u.Lock()
 	for i, app := range u.AppClients {
-		if app.AppId == appId {
+		_, existingAppId, _ := app.LoginState()
+		if existingAppId == appId {
 			if app.Conn != client.Conn {
 				replacedClient = app
 				u.AppClients = slices.Delete(u.AppClients, i, i+1)
 				u.AppClients = append(u.AppClients, client)
 			}
 
-			client.User = u
-			client.AppId = appId
-			client.IsLogin = true
+			client.setLoginState(u, appId)
 			u.Unlock()
 
 			if replacedClient != nil {
@@ -116,9 +129,7 @@ func (u *User) appLogin(appId string, client *Client) error {
 		}
 	}
 
-	client.User = u
-	client.AppId = appId
-	client.IsLogin = true
+	client.setLoginState(u, appId)
 	u.AppClients = append(u.AppClients, client)
 	u.Unlock()
 
@@ -130,7 +141,8 @@ func (u *User) appLogin(appId string, client *Client) error {
 func (u *User) appLogout(appId string, logoutClient *Client) error {
 	u.Lock()
 	for appIndex, appClient := range u.AppClients {
-		if appClient.AppId == appId && logoutClient.Conn == appClient.Conn {
+		_, existingAppId, _ := appClient.LoginState()
+		if existingAppId == appId && logoutClient.Conn == appClient.Conn {
 			u.AppClients = slices.Delete(u.AppClients, appIndex, appIndex+1)
 			break
 		}
@@ -151,7 +163,8 @@ func (u *User) AppClient(appId string) *Client {
 	defer u.RUnlock()
 
 	for _, app := range u.AppClients {
-		if app.AppId == appId {
+		_, existingAppId, _ := app.LoginState()
+		if existingAppId == appId {
 			return app
 		}
 	}
@@ -159,7 +172,6 @@ func (u *User) AppClient(appId string) *Client {
 	return nil
 }
 
-// ClientCount 返回当前用户的客户端数量
 func (u *User) ClientCount() int {
 	if u == nil {
 		return 0
@@ -170,34 +182,35 @@ func (u *User) ClientCount() int {
 	return len(u.AppClients)
 }
 
-// IsBanned 是否被封禁
 func (u *User) IsBanned() (bool, *time.Time) {
+	u.RLock()
+	defer u.RUnlock()
 	if u.Ban == nil || u.Ban.IsZero() {
 		return false, nil
 	}
-
-	return true, u.Ban
+	ban := *u.Ban
+	return true, &ban
 }
 
-// Banned 禁言用户
 func (u *User) Banned(t time.Duration) *time.Time {
 	banTime := time.Now().Add(t)
+	u.Lock()
 	u.Ban = &banTime
-	return u.Ban
+	u.Unlock()
+	return &banTime
 }
 
-// Unban 禁言解除
 func (u *User) Unban() *time.Time {
+	u.Lock()
 	u.Ban = nil
-	return u.Ban
+	u.Unlock()
+	return nil
 }
 
-// IsOnline 用户是否在线
 func (u *User) IsOnline() bool {
 	return u.ClientCount() > 0
 }
 
-// SendMsg 发送消息
 func (u *User) SendMsg(msg []byte) {
 	if u == nil {
 		return
@@ -212,7 +225,6 @@ func (u *User) SendMsg(msg []byte) {
 	}
 }
 
-// SendMsgToApp 发送消息到指定客户端
 func (u *User) SendMsgToApp(appId string, msg []byte) {
 	client := u.AppClient(appId)
 	if client != nil {
