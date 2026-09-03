@@ -435,7 +435,7 @@ func TestLongRunningStress(t *testing.T) {
 	}
 
 	if duplicates > 0 {
-		t.Fatalf("长时间测试发现 %d 个重复ID！", duplicates)
+		t.Fatalf("长时间压力测试发现 %d 个重复ID！", duplicates)
 	}
 }
 
@@ -547,7 +547,10 @@ func TestRealWorldMixedStress(t *testing.T) {
 	}
 
 	// 定期产生突发流量
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+
 		ticker := time.NewTicker(burstInterval)
 		defer ticker.Stop()
 
