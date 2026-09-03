@@ -69,7 +69,6 @@ func (h *Hubc) Run() {
 					c.Log("--", "user disconnect err:"+err.Error())
 				}
 			} else {
-				c.Close()
 				h.removeFromGuests(c)
 			}
 		}
