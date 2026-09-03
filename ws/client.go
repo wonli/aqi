@@ -2,7 +2,9 @@ package ws
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -15,6 +17,8 @@ import (
 
 	"github.com/wonli/aqi/logger"
 )
+
+var errPeerClose = errors.New("peer requested websocket close")
 
 type Client struct {
 	Hub            *Hubc
@@ -55,7 +59,7 @@ type Client struct {
 	IpLocation        string    //通过IP转换获得的地理位置
 	ConnectionTime    time.Time //连接时间
 	LastRequestTime   time.Time //最后请求时间
-	LastHeartbeatTime time.Time //最后发送心跳时间
+	LastHeartbeatTime time.Time //最后心跳活动时间
 
 	disconnectOnce sync.Once
 	stateMu        sync.RWMutex
@@ -160,7 +164,38 @@ func (c *Client) Disconnect() {
 	})
 }
 
-// Reader 读取
+// handleControlFrame handles an already-unmasked WebSocket control payload.
+// It never writes to Conn directly; outbound control frames are queued for Writer.
+func (c *Client) handleControlFrame(op ws.OpCode, payload []byte) error {
+	switch op {
+	case ws.OpPing:
+		return c.sendControlMessage(Message{Op: ws.OpPong, Data: payload})
+
+	case ws.OpPong:
+		c.SetLastHeartbeat(time.Now())
+		return nil
+
+	case ws.OpClose:
+		response := payload
+		if len(payload) > 0 {
+			code, reason := ws.ParseCloseFrameData(payload)
+			if err := ws.CheckCloseFrameData(code, reason); err != nil {
+				response = ws.NewCloseFrameBody(ws.StatusProtocolError, err.Error())
+			}
+		}
+
+		if err := c.sendControlMessage(Message{Op: ws.OpClose, Data: response}); err != nil {
+			return err
+		}
+		return errPeerClose
+	}
+
+	return nil
+}
+
+// Reader reads WebSocket frames without using wsutil.ReadClientData because
+// that helper may write Pong/Close frames from the read goroutine. Reader must
+// remain read-only; Writer is the sole owner of outbound socket writes.
 func (c *Client) Reader() {
 	writerOwnsDisconnect := false
 	defer func() {
@@ -169,53 +204,63 @@ func (c *Client) Reader() {
 		}
 	}()
 
-	for {
-		messages, err := wsutil.ReadClientMessage(c.Conn, nil)
+	reader := wsutil.NewReader(c.Conn, ws.StateServerSide)
+	reader.CheckUTF8 = true
+	reader.OnIntermediate = func(hdr ws.Header, src io.Reader) error {
+		payload, err := io.ReadAll(src)
 		if err != nil {
+			return err
+		}
+		return c.handleControlFrame(hdr.OpCode, payload)
+	}
+
+	for {
+		hdr, err := reader.NextFrame()
+		if err != nil {
+			if errors.Is(err, errPeerClose) {
+				writerOwnsDisconnect = true
+				return
+			}
 			c.Log("xx", "Error reading data", err.Error())
 			return
 		}
 
-		for _, incoming := range messages {
-			switch incoming.OpCode {
-			case ws.OpText:
-				req := string(incoming.Payload)
-				c.Log("<-", req)
-				select {
-				case c.RequestQueue <- req:
-				case <-c.Context().Done():
-					return
-				}
-
-			case ws.OpPing:
-				if err := c.sendControlMessage(Message{Op: ws.OpPong, Data: incoming.Payload}); err != nil {
-					return
-				}
-
-			case ws.OpPong:
-				// Pong is a response/heartbeat signal and does not require a reply.
-
-			case ws.OpClose:
-				payload := incoming.Payload
-				if len(payload) > 0 {
-					code, reason := ws.ParseCloseFrameData(payload)
-					if err := ws.CheckCloseFrameData(code, reason); err != nil {
-						payload = ws.NewCloseFrameBody(ws.StatusProtocolError, err.Error())
-					}
-				}
-
-				if err := c.sendControlMessage(Message{Op: ws.OpClose, Data: payload}); err != nil {
-					return
-				}
-
-				// Writer must own the final Close frame write. It will disconnect
-				// immediately after the frame is flushed.
+		payload, err := io.ReadAll(reader)
+		if err != nil {
+			if errors.Is(err, errPeerClose) {
 				writerOwnsDisconnect = true
 				return
-
-			default:
-				c.Log("xx", "Unrecognized action")
 			}
+			c.Log("xx", "Error reading data", err.Error())
+			return
+		}
+
+		if hdr.OpCode.IsControl() {
+			if err := c.handleControlFrame(hdr.OpCode, payload); err != nil {
+				if errors.Is(err, errPeerClose) {
+					writerOwnsDisconnect = true
+					return
+				}
+				return
+			}
+			continue
+		}
+
+		switch hdr.OpCode {
+		case ws.OpText:
+			req := string(payload)
+			c.Log("<-", req)
+			select {
+			case c.RequestQueue <- req:
+			case <-c.Context().Done():
+				return
+			}
+
+		case ws.OpBinary:
+			c.Log("xx", "Unrecognized binary message")
+
+		default:
+			c.Log("xx", "Unrecognized action")
 		}
 	}
 }
@@ -292,7 +337,6 @@ func (c *Client) Write() {
 			if err := c.writeMessage(Message{Op: ws.OpPing, Data: []byte("ping")}); err != nil {
 				return
 			}
-			c.SetLastHeartbeat(time.Now())
 		}
 	}
 }
