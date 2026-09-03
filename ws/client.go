@@ -117,18 +117,28 @@ func (c *Client) Reader() {
 
 // Request 处理请求
 func (c *Client) Request() {
-	for req := range c.RequestQueue {
-		if !c.Limiter.Allow() {
-			c.Log("!!", "Too many requests, please retry later")
-			c.SendActionMsg(&Action{
-				Action: "sys.rateLimit",
-				Code:   -1003,
-				Msg:    "too many requests, please retry later",
-			})
-			continue
-		}
+	for {
+		select {
+		case <-c.Context().Done():
+			return
 
-		Dispatcher(c, req)
+		case req, ok := <-c.RequestQueue:
+			if !ok {
+				return
+			}
+
+			if !c.Limiter.Allow() {
+				c.Log("!!", "Too many requests, please retry later")
+				c.SendActionMsg(&Action{
+					Action: "sys.rateLimit",
+					Code:   -1003,
+					Msg:    "too many requests, please retry later",
+				})
+				continue
+			}
+
+			Dispatcher(c, req)
+		}
 	}
 }
 
