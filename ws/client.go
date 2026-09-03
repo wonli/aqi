@@ -156,7 +156,7 @@ func (c *Client) Disconnect() {
 			_ = c.Conn.Close()
 		}
 
-		c.Log("xx", fmt.Sprintf("Close client -> %s", c.IpAddressPort))
+		c.Log("--", "disconnect")
 
 		if c.Hub != nil {
 			c.Hub.Disconnect <- c
@@ -221,6 +221,9 @@ func (c *Client) Reader() {
 				writerOwnsDisconnect = true
 				return
 			}
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+				return
+			}
 			c.Log("xx", "Error reading data", err.Error())
 			return
 		}
@@ -229,6 +232,9 @@ func (c *Client) Reader() {
 		if err != nil {
 			if errors.Is(err, errPeerClose) {
 				writerOwnsDisconnect = true
+				return
+			}
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				return
 			}
 			c.Log("xx", "Error reading data", err.Error())
@@ -351,8 +357,10 @@ func (c *Client) Log(symbol string, msg ...string) {
 		s = fmt.Sprintf("%s %s %s", c.IpAddressPort, symbol, s)
 	}
 
-	if logger.SugarLog != nil {
-		logger.SugarLog.Info(s)
+	// WebSocket connection traces are persisted for incident reconstruction,
+	// but intentionally bypass ZapLog/SugarLog so they do not flood stdout.
+	if logger.FileLog != nil {
+		logger.FileLog.Info(s)
 	}
 
 	c.mu.Lock()

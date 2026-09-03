@@ -17,6 +17,7 @@ import (
 )
 
 var ZapLog *zap.Logger
+var FileLog *zap.Logger
 var RuntimeLog *zap.Logger
 var SugarLog *zap.SugaredLogger
 
@@ -75,6 +76,7 @@ func Init(c config.Logger) {
 	rFileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&runtimeHook), zap.InfoLevel)
 
 	ZapLog = zap.New(zapcore.NewTee(stdLog, fileLog), zap.AddCaller(), zap.Development())
+	FileLog = zap.New(zapcore.NewTee(fileLog), zap.AddCaller(), zap.Development())
 	RuntimeLog = zap.New(zapcore.NewTee(rFileLog), zap.AddCaller(), zap.Development())
 
 	//sugar
@@ -82,6 +84,7 @@ func Init(c config.Logger) {
 
 	defer func() {
 		_ = ZapLog.Sync()
+		_ = FileLog.Sync()
 		_ = SugarLog.Sync()
 		_ = RuntimeLog.Sync()
 	}()
@@ -251,7 +254,7 @@ func (e *fileStyleEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Fie
 func (e *fileStyleEncoder) processMessage(msg string, filters []FilterRule) string {
 	for _, rule := range filters {
 		if rule.Pattern.MatchString(msg) {
-			// 查找字段位置
+			// 查找字段位置和长度（格式：field.path:maxLen）
 			fieldKey := fmt.Sprintf(`"%s":`, rule.Field)
 			pos := strings.Index(msg, fieldKey)
 			if pos != -1 {

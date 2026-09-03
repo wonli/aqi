@@ -33,5 +33,10 @@ func (c *Context) FlushLog() {
 		runtimeLogs = append(runtimeLogs, zap.String("", log))
 	}
 
-	logger.RuntimeLog.Info("runtime", runtimeLogs...)
+	if logger.RuntimeLog != nil {
+		logger.RuntimeLog.Info("runtime", runtimeLogs...)
+	}
+	if logger.ZapLog != nil {
+		logger.ZapLog.Info("runtime", runtimeLogs...)
+	}
 }
