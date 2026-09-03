@@ -5,9 +5,16 @@ package ws
 import (
 	"testing"
 	"time"
+
+	"github.com/wonli/aqi/logger"
+	"go.uber.org/zap"
 )
 
 func TestPubSubBackpressureDoesNotBlockHubLifecycle(t *testing.T) {
+	oldSugarLog := logger.SugarLog
+	logger.SugarLog = zap.NewNop().Sugar()
+	defer func() { logger.SugarLog = oldSugarLog }()
+
 	hub := NewHubc()
 	go hub.Run()
 
@@ -34,8 +41,8 @@ func TestPubSubBackpressureDoesNotBlockHubLifecycle(t *testing.T) {
 	client := &Client{Hub: hub, Send: make(chan Message, 1)}
 	hub.Connection <- client
 
-	// Hub.Run publishes the connect event synchronously. With a saturated
-	// PubSub queue, it must still remain able to process lifecycle events.
+	// Hub.Run lifecycle notifications are best-effort and must never block
+	// connection registry or cleanup when PubSub is backpressured.
 	deadline := time.Now().Add(300 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		hub.clientsMu.RLock()
@@ -68,5 +75,5 @@ func TestPubSubBackpressureDoesNotBlockHubLifecycle(t *testing.T) {
 	}
 
 	close(release)
-	t.Fatal("hub lifecycle stalled behind synchronous PubSub publication")
+	t.Fatal("hub lifecycle stalled behind PubSub backpressure")
 }
