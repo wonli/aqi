@@ -29,10 +29,8 @@ type Hubc struct {
 
 type GuardFunc func(h *Hubc)
 
-// GuardFunc 守护回调
 var guardFn GuardFunc
 
-// SetGuardFunc 设置全局的 Hubc 守护回调
 func SetGuardFunc(fn GuardFunc) {
 	guardFn = fn
 }
@@ -69,8 +67,9 @@ func (h *Hubc) Run() {
 			h.clientsMu.Unlock()
 
 			h.PubSub.Pub("disconnect", c)
-			if c.User != nil {
-				err := c.User.appLogout(c.AppId, c)
+			user, appId, loggedIn := c.LoginState()
+			if loggedIn && user != nil {
+				err := user.appLogout(appId, c)
 				if err != nil {
 					c.Log("--", "user disconnect err:"+err.Error())
 				}
@@ -97,7 +96,7 @@ func (h *Hubc) guard() {
 			}
 
 			if user.ClientCount() == 0 {
-				if time.Since(user.LastHeartbeatTime) >= cleanupTTL {
+				if time.Since(user.LastHeartbeat()) >= cleanupTTL {
 					user.UnsubAllTopics()
 					h.Users.Delete(key)
 					h.PubSub.Pub("cleanupUser", H{"suid": user.Suid})
@@ -112,23 +111,20 @@ func (h *Hubc) guard() {
 		guestCount := 0
 		h.clientsMu.RLock()
 		for client := range h.Clients {
-			if !client.IsLogin {
+			if !client.IsLoggedIn() {
 				guestCount++
 			}
 		}
 		h.clientsMu.RUnlock()
 
-		//登录用户数
 		h.LoginCount = userCount
 		h.GuestCount = guestCount
 
-		//发布订阅消息
 		h.PubSub.Pub("userCount", userCount)
 		h.PubSub.Pub("guestsCount", guestCount)
 	}
 }
 
-// Broadcast 发送广播消息
 func (h *Hubc) Broadcast(msg []byte) {
 	h.clientsMu.RLock()
 	defer h.clientsMu.RUnlock()
@@ -138,7 +134,6 @@ func (h *Hubc) Broadcast(msg []byte) {
 	}
 }
 
-// User 获取用户信息
 func (h *Hubc) User(uid string) *User {
 	user, ok := h.Users.Load(uid)
 	if ok {
@@ -148,7 +143,6 @@ func (h *Hubc) User(uid string) *User {
 	return nil
 }
 
-// UserClient 获取用户客户端信息
 func (h *Hubc) UserClient(uid, appId string) *Client {
 	user := h.User(uid)
 	if user != nil {
@@ -158,20 +152,17 @@ func (h *Hubc) UserClient(uid, appId string) *Client {
 	return nil
 }
 
-// UserLogin 用户登录
 func (h *Hubc) UserLogin(uid, appId string, client *Client) error {
 	user := h.User(uid)
 	if user == nil {
 		user = NewUser(uid)
 	}
 
-	//app登录
 	err := user.appLogin(appId, client)
 	if err != nil {
 		return err
 	}
 
-	//保存用户
 	h.Users.Store(uid, user)
 	return nil
 }
