@@ -92,30 +92,35 @@ func (u *User) UnsubAllTopics() int {
 
 // AppLogin 用户APP客户端登录
 func (u *User) appLogin(appId string, client *Client) error {
-	var index int
-	var appClient *Client
+	var replacedClient *Client
+
+	u.Lock()
 	for i, app := range u.AppClients {
 		if app.AppId == appId {
-			index = i
-			appClient = app
-			break
+			if app.Conn != client.Conn {
+				replacedClient = app
+				u.AppClients = slices.Delete(u.AppClients, i, i+1)
+				u.AppClients = append(u.AppClients, client)
+			}
+
+			client.User = u
+			client.AppId = appId
+			client.IsLogin = true
+			u.Unlock()
+
+			if replacedClient != nil {
+				replacedClient.Disconnect()
+			}
+			u.Hub.PubSub.Pub("login", u)
+			return nil
 		}
 	}
 
 	client.User = u
 	client.AppId = appId
 	client.IsLogin = true
-	if appClient != nil {
-		if appClient.Conn != client.Conn {
-			u.AppClients = slices.Delete(u.AppClients, index, index+1)
-			u.AppClients = append(u.AppClients, client)
-
-			//已登录连接下线
-			appClient.Disconnect()
-		}
-	} else {
-		u.AppClients = append(u.AppClients, client)
-	}
+	u.AppClients = append(u.AppClients, client)
+	u.Unlock()
 
 	u.Hub.PubSub.Pub("login", u)
 	return nil
@@ -123,18 +128,14 @@ func (u *User) appLogin(appId string, client *Client) error {
 
 // app退出
 func (u *User) appLogout(appId string, logoutClient *Client) error {
-	removeIndex := -1
+	u.Lock()
 	for appIndex, appClient := range u.AppClients {
 		if appClient.AppId == appId && logoutClient.Conn == appClient.Conn {
-			removeIndex = appIndex
+			u.AppClients = slices.Delete(u.AppClients, appIndex, appIndex+1)
 			break
 		}
 	}
-
-	if removeIndex > -1 {
-		//从客户端中移除
-		u.AppClients = slices.Delete(u.AppClients, removeIndex, removeIndex+1)
-	}
+	u.Unlock()
 
 	u.Hub.PubSub.Pub("logout", u)
 	return nil
@@ -142,14 +143,31 @@ func (u *User) appLogout(appId string, logoutClient *Client) error {
 
 // AppClient 获取APP客户端
 func (u *User) AppClient(appId string) *Client {
+	if u == nil {
+		return nil
+	}
+
+	u.RLock()
+	defer u.RUnlock()
+
 	for _, app := range u.AppClients {
-		cc := app
-		if cc.AppId == appId {
-			return cc
+		if app.AppId == appId {
+			return app
 		}
 	}
 
 	return nil
+}
+
+// ClientCount 返回当前用户的客户端数量
+func (u *User) ClientCount() int {
+	if u == nil {
+		return 0
+	}
+
+	u.RLock()
+	defer u.RUnlock()
+	return len(u.AppClients)
 }
 
 // IsBanned 是否被封禁
@@ -176,11 +194,7 @@ func (u *User) Unban() *time.Time {
 
 // IsOnline 用户是否在线
 func (u *User) IsOnline() bool {
-	if u == nil || u.AppClients == nil {
-		return false
-	}
-
-	return len(u.AppClients) > 0
+	return u.ClientCount() > 0
 }
 
 // SendMsg 发送消息
@@ -189,7 +203,11 @@ func (u *User) SendMsg(msg []byte) {
 		return
 	}
 
-	for _, client := range u.AppClients {
+	u.RLock()
+	clients := append([]*Client(nil), u.AppClients...)
+	u.RUnlock()
+
+	for _, client := range clients {
 		client.SendMsg(msg)
 	}
 }
