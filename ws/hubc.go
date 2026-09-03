@@ -153,16 +153,9 @@ func (h *Hubc) UserClient(uid, appId string) *Client {
 }
 
 func (h *Hubc) UserLogin(uid, appId string, client *Client) error {
-	user := h.User(uid)
-	if user == nil {
-		user = NewUser(uid)
-	}
+	candidate := NewUser(uid)
+	stored, _ := h.Users.LoadOrStore(uid, candidate)
+	user := stored.(*User)
 
-	err := user.appLogin(appId, client)
-	if err != nil {
-		return err
-	}
-
-	h.Users.Store(uid, user)
-	return nil
+	return user.appLogin(appId, client)
 }
