@@ -47,14 +47,9 @@ func (a *PubSub) topicMsg(topicId string, data any) *TopicMsg {
 	}
 }
 
-// Pub 发布主题。业务主动发布保留阻塞语义，以提供队列背压。
-func (a *PubSub) Pub(topicId string, data any) {
-	a.TopicMsgQueue <- a.topicMsg(topicId, data)
-}
-
-// TryPub 非阻塞发布主题。用于框架生命周期/状态通知，避免 PubSub 背压阻塞核心流程。
-// 返回 false 表示队列已满，当前通知未入队。
-func (a *PubSub) TryPub(topicId string, data any) bool {
+// Pub 发布进程内通知。队列已满时丢弃当前通知，不阻塞调用方。
+// PubSub 是 best-effort 通知机制，不应用于需要可靠执行的关键业务任务。
+func (a *PubSub) Pub(topicId string, data any) bool {
 	msg := a.topicMsg(topicId, data)
 	select {
 	case a.TopicMsgQueue <- msg:
