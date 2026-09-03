@@ -134,7 +134,7 @@ func TestUserAppClientsConcurrentAccess(t *testing.T) {
 
 	clients := make([]*Client, clientCount)
 	for i := range clients {
-		clients[i] = &Client{Send: make(chan []byte, 1)}
+		clients[i] = &Client{Send: make(chan Message, 1)}
 	}
 
 	stopReaders := make(chan struct{})
@@ -203,7 +203,7 @@ func TestHubBroadcastConcurrentRegistryMutation(t *testing.T) {
 	hub := &Hubc{Clients: make(map[*Client]struct{}, clientCount)}
 	clients := make([]*Client, clientCount)
 	for i := range clients {
-		clients[i] = &Client{Send: make(chan []byte, 1)}
+		clients[i] = &Client{Send: make(chan Message, 1)}
 	}
 
 	var wg sync.WaitGroup
