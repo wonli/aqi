@@ -206,6 +206,8 @@ func (c *Client) Log(symbol string, msg ...string) {
 }
 
 // SendMsg 把消息加入发送队列
+// SendMsg queues a message for delivery without blocking.
+// If the client's send queue is full, the message is dropped.
 func (c *Client) SendMsg(msg []byte) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -214,7 +216,10 @@ func (c *Client) SendMsg(msg []byte) {
 		}
 	}()
 
-	c.Send <- msg
+	select {
+	case c.Send <- msg:
+	default:
+	}
 }
 
 // SendActionMsg 构造消息再发送
