@@ -12,6 +12,8 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+	"github.com/wonli/aqi/logger"
+	"go.uber.org/zap"
 )
 
 // concurrentWriteProbeConn records whether multiple goroutines enter Write at
@@ -36,6 +38,10 @@ func (c *concurrentWriteProbeConn) Write(p []byte) (int, error) {
 }
 
 func TestClientConcurrentConnectionWriteProbe(t *testing.T) {
+	oldSugarLog := logger.SugarLog
+	logger.SugarLog = zap.NewNop().Sugar()
+	defer func() { logger.SugarLog = oldSugarLog }()
+
 	serverConn, peerConn := net.Pipe()
 	probeConn := &concurrentWriteProbeConn{Conn: serverConn}
 
