@@ -9,7 +9,7 @@ var Hub *Hubc
 
 type Hubc struct {
 	//所有物理 WebSocket 连接
-	Clients map[*Client]struct{}
+	Clients   map[*Client]struct{}
 	clientsMu sync.RWMutex
 
 	//已登录用户 map[string]*User
@@ -96,7 +96,7 @@ func (h *Hubc) guard() {
 				return true
 			}
 
-			if len(user.AppClients) == 0 {
+			if user.ClientCount() == 0 {
 				if time.Since(user.LastHeartbeatTime) >= cleanupTTL {
 					user.UnsubAllTopics()
 					h.Users.Delete(key)
