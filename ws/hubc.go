@@ -58,7 +58,7 @@ func (h *Hubc) Run() {
 			h.Clients[c] = struct{}{}
 			h.clientsMu.Unlock()
 
-			h.PubSub.Pub("connect", c)
+			h.PubSub.TryPub("connect", c)
 			c.Log("--", "connection")
 
 		case c := <-h.Disconnect:
@@ -66,7 +66,7 @@ func (h *Hubc) Run() {
 			delete(h.Clients, c)
 			h.clientsMu.Unlock()
 
-			h.PubSub.Pub("disconnect", c)
+			h.PubSub.TryPub("disconnect", c)
 			user, appId, loggedIn := c.LoginState()
 			if loggedIn && user != nil {
 				err := user.appLogout(appId, c)
@@ -99,7 +99,7 @@ func (h *Hubc) guard() {
 				if time.Since(user.LastHeartbeat()) >= cleanupTTL {
 					user.UnsubAllTopics()
 					h.Users.Delete(key)
-					h.PubSub.Pub("cleanupUser", H{"suid": user.Suid})
+					h.PubSub.TryPub("cleanupUser", H{"suid": user.Suid})
 				}
 			} else {
 				userCount++
@@ -120,8 +120,8 @@ func (h *Hubc) guard() {
 		h.LoginCount = userCount
 		h.GuestCount = guestCount
 
-		h.PubSub.Pub("userCount", userCount)
-		h.PubSub.Pub("guestsCount", guestCount)
+		h.PubSub.TryPub("userCount", userCount)
+		h.PubSub.TryPub("guestsCount", guestCount)
 	}
 }
 
