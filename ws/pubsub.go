@@ -30,8 +30,7 @@ func (a *PubSub) initTopic(topicId string) *Topic {
 	return topic.(*Topic)
 }
 
-// Pub 发布主题
-func (a *PubSub) Pub(topicId string, data any) {
+func (a *PubSub) topicMsg(topicId string, data any) *TopicMsg {
 	msg := Action{
 		Action: topicId,
 		Data: H{
@@ -40,12 +39,28 @@ func (a *PubSub) Pub(topicId string, data any) {
 		},
 	}
 
-	//主题不存在时先创建主题
 	a.initTopic(topicId)
-	a.TopicMsgQueue <- &TopicMsg{
+	return &TopicMsg{
 		Ori:     data,
 		TopicId: topicId,
 		Msg:     msg.Encode(),
+	}
+}
+
+// Pub 发布主题。业务主动发布保留阻塞语义，以提供队列背压。
+func (a *PubSub) Pub(topicId string, data any) {
+	a.TopicMsgQueue <- a.topicMsg(topicId, data)
+}
+
+// TryPub 非阻塞发布主题。用于框架生命周期/状态通知，避免 PubSub 背压阻塞核心流程。
+// 返回 false 表示队列已满，当前通知未入队。
+func (a *PubSub) TryPub(topicId string, data any) bool {
+	msg := a.topicMsg(topicId, data)
+	select {
+	case a.TopicMsgQueue <- msg:
+		return true
+	default:
+		return false
 	}
 }
 
