@@ -19,20 +19,14 @@ func NewPubSub() *PubSub {
 }
 
 func (a *PubSub) initTopic(topicId string) *Topic {
-	//主题不存在时先创建主题
-	topic, ok := a.Topics.Load(topicId)
-	if !ok {
-		t := &Topic{
-			Id:          topicId,
-			PubSub:      a,
-			SubUsers:    sync.Map{},
-			SubHandlers: sync.Map{},
-		}
-
-		a.Topics.Store(topicId, t)
-		return t
+	candidate := &Topic{
+		Id:          topicId,
+		PubSub:      a,
+		SubUsers:    sync.Map{},
+		SubHandlers: sync.Map{},
 	}
 
+	topic, _ := a.Topics.LoadOrStore(topicId, candidate)
 	return topic.(*Topic)
 }
 
