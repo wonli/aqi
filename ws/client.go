@@ -33,7 +33,6 @@ type Client struct {
 	ValidCacheData any       //验证相关缓存数据
 	AuthCode       string    //用于校验JWT中的code，如果相等识别为同一个用户的网络地址变更
 	ErrorCount     int       //错误次数
-	Closed         bool      //是否已经关闭
 
 	Limiter      *rate.Limiter //限速器
 	RequestQueue chan string   //处理队列
@@ -59,8 +58,9 @@ type Client struct {
 	LastRequestTime   time.Time //最后请求时间
 	LastHeartbeatTime time.Time //最后发送心跳时间
 
-	mu   sync.RWMutex
-	Keys map[string]any
+	disconnectOnce sync.Once
+	mu             sync.RWMutex
+	Keys           map[string]any
 
 	// recent logs ring buffer (last 100 items)
 	recentLogs  [100]string
@@ -87,11 +87,33 @@ func (c *Client) Context() context.Context {
 	return c.ctx
 }
 
+// Disconnect terminates the client lifecycle exactly once and notifies Hub
+// to clean up registries and user state.
+func (c *Client) Disconnect() {
+	if c == nil {
+		return
+	}
+
+	c.disconnectOnce.Do(func() {
+		if c.cancel != nil {
+			c.cancel()
+		}
+
+		if c.Conn != nil {
+			_ = c.Conn.Close()
+		}
+
+		c.Log("xx", fmt.Sprintf("Close client -> %s", c.IpAddressPort))
+
+		if c.Hub != nil {
+			c.Hub.Disconnect <- c
+		}
+	})
+}
+
 // Reader 读取
 func (c *Client) Reader() {
-	defer func() {
-		c.Hub.Disconnect <- c
-	}()
+	defer c.Disconnect()
 
 	for {
 		request, op, err := wsutil.ReadClientData(c.Conn)
@@ -103,7 +125,11 @@ func (c *Client) Reader() {
 		if op == ws.OpText && request != nil {
 			req := string(request)
 			c.Log("<-", req)
-			c.RequestQueue <- req
+			select {
+			case c.RequestQueue <- req:
+			case <-c.Context().Done():
+				return
+			}
 		} else if op == ws.OpPing {
 			err = wsutil.WriteServerMessage(c.Conn, ws.OpPong, nil)
 			if err != nil {
@@ -147,16 +173,15 @@ func (c *Client) Write() {
 	timer := time.NewTicker(5 * time.Second)
 	defer func() {
 		timer.Stop()
-		c.Hub.Disconnect <- c
+		c.Disconnect()
 	}()
 
 	for {
 		select {
-		case msg, ok := <-c.Send:
-			if !ok {
-				return
-			}
+		case <-c.Context().Done():
+			return
 
+		case msg := <-c.Send:
 			err := wsutil.WriteServerMessage(c.Conn, ws.OpText, msg)
 			if err != nil {
 				c.Log("xx", "Send msg error", err.Error())
@@ -207,16 +232,11 @@ func (c *Client) Log(symbol string, msg ...string) {
 
 // SendMsg 把消息加入发送队列
 // SendMsg queues a message for delivery without blocking.
-// If the client's send queue is full, the message is dropped.
+// If the client's send queue is full or the client is disconnected, the message is dropped.
 func (c *Client) SendMsg(msg []byte) {
-	defer func() {
-		if err := recover(); err != nil {
-			c.Hub.Disconnect <- c
-			logger.SugarLog.Errorf("SendMsg recover error(%s): %s", c.IpAddressPort, err)
-		}
-	}()
-
 	select {
+	case <-c.Context().Done():
+		return
 	case c.Send <- msg:
 	default:
 	}
@@ -228,30 +248,9 @@ func (c *Client) SendActionMsg(a *Action) {
 }
 
 // Close 关闭客户端
+// Deprecated: use Disconnect. Kept as an alias for compatibility.
 func (c *Client) Close() {
-	defer func() {
-		if err := recover(); err != nil {
-			c.Log("xx", "recover!! -> ", fmt.Sprintf("%v", err))
-			return
-		}
-	}()
-
-	if !c.Closed {
-		//防止重复关闭
-		c.Closed = true
-		if c.cancel != nil {
-			c.cancel()
-		}
-
-		//关闭通道
-		close(c.Send)
-
-		//关闭网络连接
-		_ = c.Conn.Close()
-
-		//打印日志
-		c.Log("xx", fmt.Sprintf("Close client -> %s", c.IpAddressPort))
-	}
+	c.Disconnect()
 }
 
 func (c *Client) GetRecentLogs() []string {
