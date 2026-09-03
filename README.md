@@ -2,6 +2,32 @@
 
 Aqi is a Golang Websocket business framework that supports net/http, gin, chi, etc. It integrates underlying third-party libraries such as viper, gorm, gobwa/ws, gjson, zap, asynq, which facilitates the rapid development of Websocket applications.
 
+### WebSocket Benchmark
+
+A reproducible benchmark project is maintained separately at [wonli/aqi-bench](https://github.com/wonli/aqi-bench).
+
+Current verified local baseline:
+
+```text
+Machine          Apple M1 / 16 GB
+OS               macOS 15.7.7 (24G720)
+Topology         load generator and AQI server on the same machine
+Target           ws://127.0.0.1:2015/ws
+Connections      15000
+Duration         5m0.199s
+Connect attempts 15000
+Connect errors   0
+Runtime errors   0
+Messages sent    2226297
+Messages recv    2226297
+Throughput       7416.1 msg/s
+RTT P50          890.292µs
+RTT P95          14.759584ms
+RTT P99          34.762167ms
+```
+
+The result was collected with AQI's WebSocket file ledger enabled. It is a reproducible project baseline rather than a universal capacity claim; hardware, operating system, network topology, logging configuration, Go version, and workload all affect the result. See [aqi-bench](https://github.com/wonli/aqi-bench) for the load generator, methodology, and reproduction commands.
+
 ### Quick Start
 
 Install the `aqi` CLI and create a project in three steps:
@@ -165,7 +191,6 @@ func logMiddleware() func(a *ws.Context) {
 		a.Next()
 		log.Printf("Reqponse data: %s ", a.Response.Data)
 	}
-}
 ```
 
 Register the middleware to the router using the `Use` method.
