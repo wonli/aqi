@@ -43,8 +43,8 @@ func NewHubc() *Hubc {
 		PubSub:     NewPubSub(),
 		Guests:     []*Client{},
 		Users:      new(sync.Map),
-		Connection: make(chan *Client),
-		Disconnect: make(chan *Client),
+		Connection: make(chan *Client, 256),
+		Disconnect: make(chan *Client, 256),
 	}
 
 	return Hub
