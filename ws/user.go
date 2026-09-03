@@ -124,7 +124,7 @@ func (u *User) appLogin(appId string, client *Client) error {
 			if replacedClient != nil {
 				replacedClient.Disconnect()
 			}
-			u.Hub.PubSub.Pub("login", u)
+			u.Hub.PubSub.TryPub("login", u)
 			return nil
 		}
 	}
@@ -133,7 +133,7 @@ func (u *User) appLogin(appId string, client *Client) error {
 	u.AppClients = append(u.AppClients, client)
 	u.Unlock()
 
-	u.Hub.PubSub.Pub("login", u)
+	u.Hub.PubSub.TryPub("login", u)
 	return nil
 }
 
@@ -149,7 +149,7 @@ func (u *User) appLogout(appId string, logoutClient *Client) error {
 	}
 	u.Unlock()
 
-	u.Hub.PubSub.Pub("logout", u)
+	u.Hub.PubSub.TryPub("logout", u)
 	return nil
 }
 
