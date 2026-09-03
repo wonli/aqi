@@ -59,6 +59,7 @@ type Client struct {
 	LastHeartbeatTime time.Time //最后发送心跳时间
 
 	disconnectOnce sync.Once
+	stateMu        sync.RWMutex
 	mu             sync.RWMutex
 	Keys           map[string]any
 
@@ -85,6 +86,55 @@ func (c *Client) Context() context.Context {
 		return context.Background()
 	}
 	return c.ctx
+}
+
+// setLoginState associates the client with a logged-in user.
+func (c *Client) setLoginState(user *User, appId string) {
+	c.stateMu.Lock()
+	c.User = user
+	c.AppId = appId
+	c.IsLogin = true
+	c.stateMu.Unlock()
+}
+
+// LoginState returns a consistent snapshot of the client's login identity.
+func (c *Client) LoginState() (*User, string, bool) {
+	if c == nil {
+		return nil, "", false
+	}
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	return c.User, c.AppId, c.IsLogin
+}
+
+// IsLoggedIn reports whether the client is currently associated with a user.
+func (c *Client) IsLoggedIn() bool {
+	_, _, loggedIn := c.LoginState()
+	return loggedIn
+}
+
+// SetLastHeartbeat updates the client's heartbeat timestamp and mirrors it to
+// the associated user when present.
+func (c *Client) SetLastHeartbeat(t time.Time) {
+	c.stateMu.Lock()
+	c.LastHeartbeatTime = t
+	user := c.User
+	c.stateMu.Unlock()
+
+	if user != nil {
+		user.SetLastHeartbeat(t)
+	}
+}
+
+// TouchRequest records request activity and initializes the heartbeat time for
+// newly active connections.
+func (c *Client) TouchRequest(t time.Time) {
+	c.stateMu.Lock()
+	c.LastRequestTime = t
+	if c.LastHeartbeatTime.IsZero() {
+		c.LastHeartbeatTime = t
+	}
+	c.stateMu.Unlock()
 }
 
 // Disconnect terminates the client lifecycle exactly once and notifies Hub
@@ -202,10 +252,7 @@ func (c *Client) Write() {
 				return
 			}
 
-			c.LastHeartbeatTime = time.Now()
-			if c.User != nil {
-				c.User.LastHeartbeatTime = c.LastHeartbeatTime
-			}
+			c.SetLastHeartbeat(time.Now())
 		}
 	}
 }
@@ -213,8 +260,9 @@ func (c *Client) Write() {
 // Log websocket日志
 func (c *Client) Log(symbol string, msg ...string) {
 	s := strings.Join(msg, ", ")
-	if c.IsLogin {
-		s = fmt.Sprintf("%s %s [%s-%s] %s", c.IpAddressPort, symbol, c.User.Suid, c.AppId, s)
+	user, appId, loggedIn := c.LoginState()
+	if loggedIn && user != nil {
+		s = fmt.Sprintf("%s %s [%s-%s] %s", c.IpAddressPort, symbol, user.Suid, appId, s)
 	} else {
 		s = fmt.Sprintf("%s %s %s", c.IpAddressPort, symbol, s)
 	}
