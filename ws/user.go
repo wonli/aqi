@@ -111,7 +111,7 @@ func (u *User) appLogin(appId string, client *Client) error {
 			u.AppClients = append(u.AppClients, client)
 
 			//已登录连接下线
-			u.Hub.Disconnect <- appClient
+			appClient.Disconnect()
 		}
 	} else {
 		u.AppClients = append(u.AppClients, client)
@@ -134,9 +134,6 @@ func (u *User) appLogout(appId string, logoutClient *Client) error {
 	if removeIndex > -1 {
 		//从客户端中移除
 		u.AppClients = slices.Delete(u.AppClients, removeIndex, removeIndex+1)
-
-		//关闭客户端
-		logoutClient.Close()
 	}
 
 	u.Hub.PubSub.Pub("logout", u)
