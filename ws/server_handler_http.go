@@ -55,6 +55,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 	c.initContext(r.Context())
 
 	c.Hub.Connection <- c
+	c.Log("--", "connection")
 	go c.Reader()
 	go c.Write()
 

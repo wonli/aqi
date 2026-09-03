@@ -10,20 +10,28 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-func TestClientLogKeepsPacketTraceInMemoryWithoutLoggerOutput(t *testing.T) {
-	core, observed := observer.New(zapcore.InfoLevel)
-	previous := logger.SugarLog
-	logger.SugarLog = zap.New(core).Sugar()
+func TestClientLogPersistsPacketTraceWithoutConsoleOutput(t *testing.T) {
+	fileCore, fileObserved := observer.New(zapcore.InfoLevel)
+	consoleCore, consoleObserved := observer.New(zapcore.InfoLevel)
+
+	previousFile := logger.FileLog
+	previousSugar := logger.SugarLog
+	logger.FileLog = zap.New(fileCore)
+	logger.SugarLog = zap.New(consoleCore).Sugar()
 	t.Cleanup(func() {
-		logger.SugarLog = previous
+		logger.FileLog = previousFile
+		logger.SugarLog = previousSugar
 	})
 
 	client := &Client{IpAddressPort: "127.0.0.1:1234"}
 	client.Log("<-", `{"action":"bench.echo"}`)
 	client.Log("->", `{"code":0}`)
 
-	if got := observed.Len(); got != 0 {
-		t.Fatalf("packet traces should not be emitted through logger, got %d entries", got)
+	if got := consoleObserved.Len(); got != 0 {
+		t.Fatalf("websocket ledger should not be emitted through console logger, got %d entries", got)
+	}
+	if got := fileObserved.Len(); got != 2 {
+		t.Fatalf("packet traces should be persisted through file logger, got %d entries", got)
 	}
 
 	logs := client.GetRecentLogs()
@@ -35,21 +43,29 @@ func TestClientLogKeepsPacketTraceInMemoryWithoutLoggerOutput(t *testing.T) {
 	}
 }
 
-func TestClientLogStillEmitsDiagnosticLogs(t *testing.T) {
-	core, observed := observer.New(zapcore.InfoLevel)
-	previous := logger.SugarLog
-	logger.SugarLog = zap.New(core).Sugar()
+func TestClientLogPersistsDiagnosticLogsWithoutConsoleOutput(t *testing.T) {
+	fileCore, fileObserved := observer.New(zapcore.InfoLevel)
+	consoleCore, consoleObserved := observer.New(zapcore.InfoLevel)
+
+	previousFile := logger.FileLog
+	previousSugar := logger.SugarLog
+	logger.FileLog = zap.New(fileCore)
+	logger.SugarLog = zap.New(consoleCore).Sugar()
 	t.Cleanup(func() {
-		logger.SugarLog = previous
+		logger.FileLog = previousFile
+		logger.SugarLog = previousSugar
 	})
 
 	client := &Client{IpAddressPort: "127.0.0.1:1234"}
 	client.Log("xx", "read failed")
 
-	if got := observed.Len(); got != 1 {
-		t.Fatalf("diagnostic logs should still be emitted, got %d entries", got)
+	if got := consoleObserved.Len(); got != 0 {
+		t.Fatalf("websocket diagnostics should not be emitted through console logger, got %d entries", got)
 	}
-	if !strings.Contains(observed.All()[0].Message, "read failed") {
-		t.Fatalf("unexpected diagnostic log: %q", observed.All()[0].Message)
+	if got := fileObserved.Len(); got != 1 {
+		t.Fatalf("diagnostic log should be persisted, got %d entries", got)
+	}
+	if !strings.Contains(fileObserved.All()[0].Message, "read failed") {
+		t.Fatalf("unexpected diagnostic log: %q", fileObserved.All()[0].Message)
 	}
 }

@@ -60,7 +60,6 @@ func (h *Hubc) Run() {
 			h.clientsMu.Unlock()
 
 			h.PubSub.Pub("connect", c)
-			c.Log("--", "connection")
 
 		case c := <-h.Disconnect:
 			h.clientsMu.Lock()
