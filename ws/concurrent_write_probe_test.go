@@ -47,7 +47,7 @@ func TestClientConcurrentConnectionWriteProbe(t *testing.T) {
 
 	client := &Client{
 		Conn:         probeConn,
-		Send:         make(chan []byte, 128),
+		Send:         make(chan Message, 128),
 		RequestQueue: make(chan string, 1),
 	}
 	client.initContext(context.Background())
@@ -66,7 +66,8 @@ func TestClientConcurrentConnectionWriteProbe(t *testing.T) {
 	}()
 
 	// Drain server frames so net.Pipe writes can complete while the peer keeps
-	// injecting Ping frames that make Reader write Pong directly.
+	// injecting Ping frames. Reader must enqueue Pong and leave all connection
+	// writes to the Writer goroutine.
 	go func() {
 		defer close(peerReadDone)
 		for {
@@ -79,21 +80,15 @@ func TestClientConcurrentConnectionWriteProbe(t *testing.T) {
 	payload := bytes.Repeat([]byte("x"), 32*1024)
 	deadline := time.Now().Add(2 * time.Second)
 
-	for i := 0; i < 200 && time.Now().Before(deadline) && !probeConn.overlapped.Load(); i++ {
+	for i := 0; i < 200 && time.Now().Before(deadline); i++ {
 		client.SendMsg(payload)
-
-		// Client-side Ping is masked by wsutil.WriteClientMessage. Reader handles
-		// it by calling WriteServerMessage(OpPong) on the same connection that the
-		// Writer goroutine uses for text frames.
 		if err := wsutil.WriteClientMessage(peerConn, ws.OpPing, nil); err != nil {
 			break
 		}
 	}
 
-	// Give an in-flight pair of writes one final scheduling window.
-	for !probeConn.overlapped.Load() && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	// Let queued Text/Pong frames drain through the single writer.
+	time.Sleep(50 * time.Millisecond)
 
 	_ = peerConn.Close()
 	client.Disconnect()
@@ -115,6 +110,6 @@ func TestClientConcurrentConnectionWriteProbe(t *testing.T) {
 	}
 
 	if probeConn.overlapped.Load() {
-		t.Fatal("detected concurrent writes to the same WebSocket connection: Reader/Pong and Writer outbound path overlapped")
+		t.Fatal("detected concurrent writes to the same WebSocket connection")
 	}
 }
