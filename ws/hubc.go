@@ -3,15 +3,14 @@ package ws
 import (
 	"sync"
 	"time"
-
-	"golang.org/x/exp/slices"
 )
 
 var Hub *Hubc
 
 type Hubc struct {
-	//访客列表
-	Guests []*Client
+	//所有物理 WebSocket 连接
+	Clients map[*Client]struct{}
+	clientsMu sync.RWMutex
 
 	//已登录用户 map[string]*User
 	Users *sync.Map
@@ -41,7 +40,7 @@ func SetGuardFunc(fn GuardFunc) {
 func NewHubc() *Hubc {
 	Hub = &Hubc{
 		PubSub:     NewPubSub(),
-		Guests:     []*Client{},
+		Clients:    make(map[*Client]struct{}),
 		Users:      new(sync.Map),
 		Connection: make(chan *Client, 256),
 		Disconnect: make(chan *Client, 256),
@@ -57,19 +56,24 @@ func (h *Hubc) Run() {
 	for {
 		select {
 		case c := <-h.Connection:
-			h.Guests = append(h.Guests, c)
+			h.clientsMu.Lock()
+			h.Clients[c] = struct{}{}
+			h.clientsMu.Unlock()
+
 			h.PubSub.Pub("connect", c)
 			c.Log("--", "connection")
 
 		case c := <-h.Disconnect:
+			h.clientsMu.Lock()
+			delete(h.Clients, c)
+			h.clientsMu.Unlock()
+
 			h.PubSub.Pub("disconnect", c)
 			if c.User != nil {
 				err := c.User.appLogout(c.AppId, c)
 				if err != nil {
 					c.Log("--", "user disconnect err:"+err.Error())
 				}
-			} else {
-				h.removeFromGuests(c)
 			}
 		}
 	}
@@ -78,13 +82,14 @@ func (h *Hubc) Run() {
 func (h *Hubc) guard() {
 	cleanupTTL := 5 * time.Minute
 	timer := time.NewTicker(30 * time.Second)
+	defer timer.Stop()
+
 	for range timer.C {
 		if guardFn != nil {
 			guardFn(h)
 		}
 
 		userCount := 0
-		guestCount := len(h.Guests)
 		h.Users.Range(func(key, value any) bool {
 			user, ok := value.(*User)
 			if !ok || user == nil {
@@ -104,6 +109,15 @@ func (h *Hubc) guard() {
 			return true
 		})
 
+		guestCount := 0
+		h.clientsMu.RLock()
+		for client := range h.Clients {
+			if !client.IsLogin {
+				guestCount++
+			}
+		}
+		h.clientsMu.RUnlock()
+
 		//登录用户数
 		h.LoginCount = userCount
 		h.GuestCount = guestCount
@@ -116,19 +130,11 @@ func (h *Hubc) guard() {
 
 // Broadcast 发送广播消息
 func (h *Hubc) Broadcast(msg []byte) {
-	for _, g := range h.Guests {
-		g.SendMsg(msg)
-	}
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
 
-	if h.Users != nil {
-		h.Users.Range(func(key, value any) bool {
-			user, ok := value.(*User)
-			if ok && user != nil {
-				user.SendMsg(msg)
-			}
-
-			return true
-		})
+	for client := range h.Clients {
+		client.SendMsg(msg)
 	}
 }
 
@@ -167,14 +173,5 @@ func (h *Hubc) UserLogin(uid, appId string, client *Client) error {
 
 	//保存用户
 	h.Users.Store(uid, user)
-	h.removeFromGuests(client)
 	return nil
-}
-
-// 从访客列表中删除
-func (h *Hubc) removeFromGuests(client *Client) {
-	index := slices.Index(h.Guests, client)
-	if index > -1 {
-		h.Guests = slices.Delete(h.Guests, index, index+1)
-	}
 }
