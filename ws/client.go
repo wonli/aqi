@@ -10,9 +10,8 @@ import (
 	"time"
 
 	"github.com/gobwas/ws"
-	"golang.org/x/time/rate"
-
 	"github.com/gobwas/ws/wsutil"
+	"golang.org/x/time/rate"
 
 	"github.com/wonli/aqi/logger"
 )
@@ -163,27 +162,60 @@ func (c *Client) Disconnect() {
 
 // Reader 读取
 func (c *Client) Reader() {
-	defer c.Disconnect()
+	writerOwnsDisconnect := false
+	defer func() {
+		if !writerOwnsDisconnect {
+			c.Disconnect()
+		}
+	}()
 
 	for {
-		request, op, err := wsutil.ReadClientData(c.Conn)
+		messages, err := wsutil.ReadClientMessage(c.Conn, nil)
 		if err != nil {
 			c.Log("xx", "Error reading data", err.Error())
 			return
 		}
 
-		if op == ws.OpText && request != nil {
-			req := string(request)
-			c.Log("<-", req)
-			select {
-			case c.RequestQueue <- req:
-			case <-c.Context().Done():
+		for _, incoming := range messages {
+			switch incoming.OpCode {
+			case ws.OpText:
+				req := string(incoming.Payload)
+				c.Log("<-", req)
+				select {
+				case c.RequestQueue <- req:
+				case <-c.Context().Done():
+					return
+				}
+
+			case ws.OpPing:
+				if err := c.sendControlMessage(Message{Op: ws.OpPong, Data: incoming.Payload}); err != nil {
+					return
+				}
+
+			case ws.OpPong:
+				// Pong is a response/heartbeat signal and does not require a reply.
+
+			case ws.OpClose:
+				payload := incoming.Payload
+				if len(payload) > 0 {
+					code, reason := ws.ParseCloseFrameData(payload)
+					if err := ws.CheckCloseFrameData(code, reason); err != nil {
+						payload = ws.NewCloseFrameBody(ws.StatusProtocolError, err.Error())
+					}
+				}
+
+				if err := c.sendControlMessage(Message{Op: ws.OpClose, Data: payload}); err != nil {
+					return
+				}
+
+				// Writer must own the final Close frame write. It will disconnect
+				// immediately after the frame is flushed.
+				writerOwnsDisconnect = true
 				return
+
+			default:
+				c.Log("xx", "Unrecognized action")
 			}
-		} else if op == ws.OpPing {
-			c.SendMessage(Message{Op: ws.OpPong})
-		} else {
-			c.Log("xx", "Unrecognized action")
 		}
 	}
 }
@@ -215,6 +247,19 @@ func (c *Client) Request() {
 	}
 }
 
+func (c *Client) writeMessage(msg Message) error {
+	if err := wsutil.WriteServerMessage(c.Conn, msg.Op, msg.Data); err != nil {
+		c.Log("xx", "Send msg error", err.Error())
+		return err
+	}
+
+	if msg.Op == ws.OpText {
+		c.Log("->", string(msg.Data))
+	}
+
+	return nil
+}
+
 // Write 发送
 func (c *Client) Write() {
 	timer := time.NewTicker(5 * time.Second)
@@ -229,9 +274,11 @@ func (c *Client) Write() {
 			return
 
 		case msg := <-c.Send:
-			err := wsutil.WriteServerMessage(c.Conn, msg.Op, msg.Data)
-			if err != nil {
-				c.Log("xx", "Send msg error", err.Error())
+			if err := c.writeMessage(msg); err != nil {
+				return
+			}
+
+			if msg.Op == ws.OpClose {
 				return
 			}
 
@@ -241,11 +288,10 @@ func (c *Client) Write() {
 				return
 			}
 
-			if msg.Op == ws.OpText {
-				c.Log("->", string(msg.Data))
-			}
 		case <-timer.C:
-			c.SendMessage(Message{Op: ws.OpPing, Data: []byte("ping")})
+			if err := c.writeMessage(Message{Op: ws.OpPing, Data: []byte("ping")}); err != nil {
+				return
+			}
 			c.SetLastHeartbeat(time.Now())
 		}
 	}
@@ -270,6 +316,17 @@ func (c *Client) Log(symbol string, msg ...string) {
 		c.recentCount++
 	}
 	c.mu.Unlock()
+}
+
+// sendControlMessage queues a control frame and waits for queue capacity.
+// Control frames must not be silently dropped when the regular send queue is full.
+func (c *Client) sendControlMessage(msg Message) error {
+	select {
+	case <-c.Context().Done():
+		return c.Context().Err()
+	case c.Send <- msg:
+		return nil
+	}
 }
 
 // SendMessage queues an outbound WebSocket frame without blocking.
