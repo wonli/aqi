@@ -20,7 +20,7 @@ import (
 type Client struct {
 	Hub            *Hubc
 	Conn           net.Conn
-	Send           chan []byte
+	Send           chan Message
 	Endpoint       string    //入口地址
 	OnceId         string    //临时ID，扫码登录等场景作为客户端唯一标识
 	ClientId       string    //客户端ID
@@ -181,10 +181,7 @@ func (c *Client) Reader() {
 				return
 			}
 		} else if op == ws.OpPing {
-			err = wsutil.WriteServerMessage(c.Conn, ws.OpPong, nil)
-			if err != nil {
-				c.Log("xx", "Reply pong", err.Error())
-			}
+			c.SendMessage(Message{Op: ws.OpPong})
 		} else {
 			c.Log("xx", "Unrecognized action")
 		}
@@ -232,7 +229,7 @@ func (c *Client) Write() {
 			return
 
 		case msg := <-c.Send:
-			err := wsutil.WriteServerMessage(c.Conn, ws.OpText, msg)
+			err := wsutil.WriteServerMessage(c.Conn, msg.Op, msg.Data)
 			if err != nil {
 				c.Log("xx", "Send msg error", err.Error())
 				return
@@ -244,14 +241,11 @@ func (c *Client) Write() {
 				return
 			}
 
-			c.Log("->", string(msg))
-		case <-timer.C:
-			err := wsutil.WriteServerMessage(c.Conn, ws.OpPing, []byte("ping"))
-			if err != nil {
-				c.Log("xx", "Error actively pinging the client", err.Error())
-				return
+			if msg.Op == ws.OpText {
+				c.Log("->", string(msg.Data))
 			}
-
+		case <-timer.C:
+			c.SendMessage(Message{Op: ws.OpPing, Data: []byte("ping")})
 			c.SetLastHeartbeat(time.Now())
 		}
 	}
@@ -278,16 +272,19 @@ func (c *Client) Log(symbol string, msg ...string) {
 	c.mu.Unlock()
 }
 
-// SendMsg 把消息加入发送队列
-// SendMsg queues a message for delivery without blocking.
-// If the client's send queue is full or the client is disconnected, the message is dropped.
-func (c *Client) SendMsg(msg []byte) {
+// SendMessage queues an outbound WebSocket frame without blocking.
+func (c *Client) SendMessage(msg Message) {
 	select {
 	case <-c.Context().Done():
 		return
 	case c.Send <- msg:
 	default:
 	}
+}
+
+// SendMsg 把文本消息加入发送队列
+func (c *Client) SendMsg(msg []byte) {
+	c.SendMessage(Message{Op: ws.OpText, Data: msg})
 }
 
 // SendActionMsg 构造消息再发送
