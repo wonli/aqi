@@ -88,7 +88,7 @@ func TestTelemetryObserveRecordsFields(t *testing.T) {
 		ClientId: "client-1",
 		AppId:    "app",
 		Platform: "ios",
-		Send:     make(chan []byte, 1),
+		Send:     make(chan ws.Message, 1),
 	}
 
 	ws.Dispatcher(client, `{"id":"req-1","action":"telemetry.observe.test","params":"{}"}`)
@@ -118,7 +118,7 @@ func TestRecoveryRecordsPanicOnSpan(t *testing.T) {
 	})
 
 	client := &ws.Client{
-		Send: make(chan []byte, 1),
+		Send: make(chan ws.Message, 1),
 	}
 
 	ws.Dispatcher(client, `{"id":"req-2","action":"telemetry.panic.test","params":"{}"}`)
