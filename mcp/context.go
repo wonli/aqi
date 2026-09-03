@@ -2,7 +2,8 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 
@@ -34,12 +35,12 @@ type Context struct {
 
 	ToolName  string
 	Request   *http.Request
-	Arguments json.RawMessage
+	Arguments jsontext.Value
 
 	response response
 }
 
-func newContext(ctx context.Context, r *http.Request, toolName string, args json.RawMessage) *Context {
+func newContext(ctx context.Context, r *http.Request, toolName string, args jsontext.Value) *Context {
 	return &Context{
 		Context:   ctx,
 		ToolName:  toolName,

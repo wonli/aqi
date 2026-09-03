@@ -1,7 +1,7 @@
 package ws
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 
 	"go.uber.org/zap"
 

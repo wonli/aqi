@@ -3,10 +3,12 @@ package mcp
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -145,9 +147,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req rpcRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.UseNumber()
-	if err := decoder.Decode(&req); err != nil {
+	if err := json.UnmarshalRead(r.Body, &req); err != nil {
 		writeRPC(w, rpcResponse{
 			JSONRPC: jsonrpcVersion,
 			Error:   &rpcError{Code: rpcErrorParseError, Message: "parse error", Data: err.Error()},
@@ -232,10 +232,10 @@ func (s *Server) toolsList() toolsListResult {
 	return toolsListResult{Tools: tools}
 }
 
-func (s *Server) toolsCall(r *http.Request, params json.RawMessage) (any, *rpcError) {
+func (s *Server) toolsCall(r *http.Request, params jsontext.Value) (any, *rpcError) {
 	var p struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
+		Name      string         `json:"name"`
+		Arguments jsontext.Value `json:"arguments"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &rpcError{Code: rpcErrorInvalidParams, Message: "invalid params", Data: err.Error()}
@@ -244,7 +244,7 @@ func (s *Server) toolsCall(r *http.Request, params json.RawMessage) (any, *rpcEr
 		return nil, &rpcError{Code: rpcErrorInvalidParams, Message: "tool name is required"}
 	}
 	if len(p.Arguments) == 0 || string(p.Arguments) == "null" {
-		p.Arguments = []byte(defaultEmptyArguments)
+		p.Arguments = jsontext.Value(defaultEmptyArguments)
 	}
 
 	s.mu.RLock()
@@ -265,7 +265,7 @@ func (s *Server) toolsCall(r *http.Request, params json.RawMessage) (any, *rpcEr
 	return result, nil
 }
 
-func (s *Server) callTool(r *http.Request, tool registeredTool, args json.RawMessage) toolResult {
+func (s *Server) callTool(r *http.Request, tool registeredTool, args jsontext.Value) toolResult {
 	ctx := r.Context()
 	cancel := func() {}
 	if tool.Policy.Timeout > 0 {
@@ -307,8 +307,8 @@ func (s *Server) callTool(r *http.Request, tool registeredTool, args json.RawMes
 	}
 }
 
-func validateArguments(schema Schema, arguments json.RawMessage) error {
-	var args map[string]json.RawMessage
+func validateArguments(schema Schema, arguments jsontext.Value) error {
+	var args map[string]jsontext.Value
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return ErrInvalidArguments
 	}
@@ -336,51 +336,38 @@ func validateArguments(schema Schema, arguments json.RawMessage) error {
 	return nil
 }
 
-func validateArgumentType(name string, schema Schema, value any) error {
-	if schema.Type == "" || value == nil {
-		return nil
-	}
-
-	raw, ok := value.(json.RawMessage)
-	if !ok {
+func validateArgumentType(name string, schema Schema, value jsontext.Value) error {
+	if schema.Type == "" || len(value) == 0 || string(value) == "null" {
 		return nil
 	}
 
 	switch schema.Type {
 	case "string":
 		var v string
-		if err := json.Unmarshal(raw, &v); err != nil {
+		if err := json.Unmarshal(value, &v); err != nil {
 			return fmt.Errorf("argument %q must be a string", name)
 		}
 	case "number":
-		var v json.Number
-		if err := json.Unmarshal(raw, &v); err != nil {
-			return fmt.Errorf("argument %q must be a number", name)
-		}
-		if _, err := v.Float64(); err != nil {
+		if _, err := strconv.ParseFloat(string(value), 64); err != nil {
 			return fmt.Errorf("argument %q must be a number", name)
 		}
 	case "integer":
-		var v json.Number
-		if err := json.Unmarshal(raw, &v); err != nil {
-			return fmt.Errorf("argument %q must be an integer", name)
-		}
-		if _, err := v.Int64(); err != nil {
+		if _, err := strconv.ParseInt(string(value), 10, 64); err != nil {
 			return fmt.Errorf("argument %q must be an integer", name)
 		}
 	case "boolean":
 		var v bool
-		if err := json.Unmarshal(raw, &v); err != nil {
+		if err := json.Unmarshal(value, &v); err != nil {
 			return fmt.Errorf("argument %q must be a boolean", name)
 		}
 	case "object":
-		var v map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &v); err != nil {
+		var v map[string]jsontext.Value
+		if err := json.Unmarshal(value, &v); err != nil {
 			return fmt.Errorf("argument %q must be an object", name)
 		}
 	case "array":
-		var v []json.RawMessage
-		if err := json.Unmarshal(raw, &v); err != nil {
+		var v []jsontext.Value
+		if err := json.Unmarshal(value, &v); err != nil {
 			return fmt.Errorf("argument %q must be an array", name)
 		}
 	}
@@ -412,7 +399,7 @@ func errorToolResult(err error) toolResult {
 func writeRPC(w http.ResponseWriter, res rpcResponse) {
 	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(res)
+	_ = json.MarshalWrite(w, res)
 }
 
 type callResult struct {
@@ -421,10 +408,10 @@ type callResult struct {
 }
 
 type rpcRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
+	JSONRPC string         `json:"jsonrpc"`
+	ID      jsontext.Value `json:"id,omitempty"`
+	Method  string         `json:"method"`
+	Params  jsontext.Value `json:"params,omitempty"`
 }
 
 type rpcResponse struct {

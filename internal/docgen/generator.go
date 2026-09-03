@@ -1,7 +1,8 @@
 package docgen
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -502,7 +503,12 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string, changelog *Change
 	}
 
 	// 生成 JSON
-	jsonData, err := json.MarshalIndent(doc, "", "  ")
+	jsonData, err := json.Marshal(
+		doc,
+		jsontext.Multiline(true),
+		jsontext.WithIndent("  "),
+	)
+
 	if err != nil {
 		return fmt.Errorf("生成 JSON 失败: %w", err)
 	}
@@ -626,7 +632,12 @@ func GenerateGlobalChangelog(snapshotDir string, allRouterFiles []RouterFile) (*
 	}
 
 	// 写入快照文件
-	snapshotData, err := json.MarshalIndent(snapshots, "", "  ")
+	snapshotData, err := json.Marshal(
+		snapshots,
+		jsontext.Multiline(true),
+		jsontext.WithIndent("  "),
+	)
+
 	if err == nil {
 		os.WriteFile(snapshotPath, snapshotData, 0644)
 	}

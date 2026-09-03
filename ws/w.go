@@ -26,9 +26,12 @@ func (m *Action) Encode() []byte {
 func (m *Action) json() []byte {
 	r, err := json.Marshal(m)
 	if err != nil {
-		logger.SugarLog.Error("JSON格式化失败",
-			zap.String("error", err.Error()),
-		)
+		if logger.SugarLog != nil {
+			logger.SugarLog.Error("JSON格式化失败",
+				zap.String("error", err.Error()),
+			)
+		}
+		return nil
 	}
 
 	return r

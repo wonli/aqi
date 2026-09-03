@@ -3,7 +3,8 @@ package docgen
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -653,7 +654,12 @@ func UpdateDocumentsInConfig(configPath string, documents []DocumentInfo, format
 			return fmt.Errorf("序列化 YAML 配置失败: %w", err)
 		}
 	} else {
-		outputData, err = json.MarshalIndent(&config, "", "    ")
+		outputData, err = json.Marshal(
+			&config,
+			jsontext.Multiline(true),
+			jsontext.WithIndent("    "),
+		)
+
 		if err != nil {
 			return fmt.Errorf("序列化 JSON 配置失败: %w", err)
 		}

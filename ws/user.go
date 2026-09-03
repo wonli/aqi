@@ -31,8 +31,8 @@ type User struct {
 	Hub        *Hubc     `json:"-"`
 	AppClients []*Client `json:"-"` //appId对应客户端
 
-	SubTopics map[string]*Topic `json:"-"` //topicId订阅的主题名称及信息
-	sync.RWMutex
+	SubTopics    map[string]*Topic `json:"-"` //topicId订阅的主题名称及信息
+	sync.RWMutex `json:"-"`
 }
 
 func NewUser(uid string) *User {
