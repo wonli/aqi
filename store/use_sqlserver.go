@@ -1,6 +1,8 @@
 package store
 
 import (
+	"sync"
+
 	"github.com/spf13/viper"
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
@@ -18,6 +20,7 @@ type SqlServerStore struct {
 	options     *gorm.Config
 	callback    callback
 	hasCallback bool
+	mu          sync.Mutex
 }
 
 func (m *SqlServerStore) Config() *config.SqlServer {
@@ -35,15 +38,22 @@ func (m *SqlServerStore) ConfigKey() string {
 }
 
 func (m *SqlServerStore) Options(options *gorm.Config) {
+	m.mu.Lock()
 	m.options = options
+	m.mu.Unlock()
 }
 
 func (m *SqlServerStore) Callback(fn callback) {
+	m.mu.Lock()
 	m.callback = fn
 	m.hasCallback = true
+	m.mu.Unlock()
 }
 
 func (m *SqlServerStore) Use() *gorm.DB {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.gormDB != nil {
 		return m.gormDB
 	}
@@ -60,21 +70,24 @@ func (m *SqlServerStore) Use() *gorm.DB {
 		},
 	}
 
-	if m.options != nil {
-		if m.options.Logger == nil {
-			m.options.Logger = conf.Logger
+	options := m.options
+	if options != nil {
+		if options.Logger == nil {
+			options.Logger = conf.Logger
 		}
 
-		if m.options.NamingStrategy == nil {
-			m.options.NamingStrategy = conf.NamingStrategy
+		if options.NamingStrategy == nil {
+			options.NamingStrategy = conf.NamingStrategy
 		}
 	} else {
-		m.options = conf
+		options = conf
 	}
 
-	db, err := gorm.Open(sqlserver.Open(r.GetDsn()), m.options)
+	db, err := gorm.Open(sqlserver.Open(r.GetDsn()), options)
 	if err != nil {
-		logger.SugarLog.Errorf("%s (gorm.open)", err.Error())
+		if logger.SugarLog != nil {
+			logger.SugarLog.Errorf("%s (gorm.open)", err.Error())
+		}
 		return nil
 	}
 
@@ -84,7 +97,9 @@ func (m *SqlServerStore) Use() *gorm.DB {
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		logger.SugarLog.Errorf("%s (ping)", err.Error())
+		if logger.SugarLog != nil {
+			logger.SugarLog.Errorf("%s (ping)", err.Error())
+		}
 		return nil
 	}
 

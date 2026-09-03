@@ -1,26 +1,33 @@
 package telemetry
 
-import "context"
+import (
+	"context"
+	"sync/atomic"
+)
 
-var globalProvider Provider = NewNoopProvider()
+type providerHolder struct {
+	provider Provider
+}
+
+var globalProvider atomic.Pointer[providerHolder]
 
 // SetProvider updates the global telemetry provider.
 func SetProvider(provider Provider) {
 	if provider == nil {
-		globalProvider = NewNoopProvider()
-		return
+		provider = NewNoopProvider()
 	}
 
-	globalProvider = provider
+	globalProvider.Store(&providerHolder{provider: provider})
 }
 
 // GetProvider returns the active global telemetry provider.
 func GetProvider() Provider {
-	if globalProvider == nil {
+	holder := globalProvider.Load()
+	if holder == nil || holder.provider == nil {
 		return NewNoopProvider()
 	}
 
-	return globalProvider
+	return holder.provider
 }
 
 // Start starts a span with the active global provider.

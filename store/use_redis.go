@@ -1,6 +1,8 @@
 package store
 
 import (
+	"sync"
+
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 
@@ -10,6 +12,7 @@ import (
 type RedisStore struct {
 	redisClient *redis.Client
 	configKey   string
+	mu          sync.Mutex
 }
 
 func (s *RedisStore) Config() *config.Redis {
@@ -27,6 +30,9 @@ func (s *RedisStore) ConfigKey() string {
 }
 
 func (s *RedisStore) Use() *redis.Client {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.redisClient != nil {
 		return s.redisClient
 	}

@@ -36,7 +36,7 @@ func (t *Trie) Insert(str string, p any) {
 			child = NewNode()
 			child.Val = val
 			node.Child[val] = child
-			node.Count += 1
+			node.Count++
 			child.Depth = node.Depth + 1
 		}
 		node = child
@@ -90,42 +90,42 @@ func (t *Trie) collect(node *Node) (payloads []any) {
 	return payloads
 }
 
-// Del deletion of a node has the following cases:
-//  1. Prefix deletion: Check if Count is greater than 0, then set IsWord to false.
-//  3. String deletion:
-//     a. If there is no branching, delete the entire string.
-//     b. If there is branching, only delete the part that is not a common prefix.
+// Del removes a word while preserving any shared prefix and descendants.
+// Deleting a word that does not exist is a no-op.
 func (t *Trie) Del(str string) {
-	bt := []rune(str)
-	if len(str) == 0 {
+	runes := []rune(str)
+	if len(runes) == 0 {
 		return
 	}
 
-	node := t.Root
-	var lastBranch *Node
-	var delVal rune
+	nodes := make([]*Node, len(runes)+1)
+	nodes[0] = t.Root
 
-	for index, val := range bt {
+	node := t.Root
+	for i, val := range runes {
 		child, ok := node.Child[val]
-		if ok {
-			if child.Count > 1 {
-				lastBranch = child
-				delVal = bt[index+1]
-			}
+		if !ok {
+			return
 		}
 		node = child
+		nodes[i+1] = node
 	}
 
-	if node.Count > 0 {
-		// del prefix
-		node.IsWord = false
-	} else {
-		if lastBranch == nil {
-			// del charset
-			lastBranch = t.Root
-			delVal = bt[0]
+	if !node.IsWord {
+		return
+	}
+
+	node.IsWord = false
+	node.Payload = nil
+
+	for i := len(runes) - 1; i >= 0; i-- {
+		child := nodes[i+1]
+		if child.IsWord || len(child.Child) > 0 {
+			break
 		}
-		delete(lastBranch.Child, delVal)
-		lastBranch.Count -= 1
+
+		parent := nodes[i]
+		delete(parent.Child, runes[i])
+		parent.Count = len(parent.Child)
 	}
 }

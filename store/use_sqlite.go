@@ -1,9 +1,11 @@
 package store
 
 import (
+	"sync"
+
+	"github.com/libtnb/sqlite"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
@@ -19,6 +21,7 @@ type SQLiteStore struct {
 	options     *gorm.Config
 	callback    callback
 	hasCallback bool
+	mu          sync.Mutex
 }
 
 func (m *SQLiteStore) Config() *config.Sqlite {
@@ -36,15 +39,22 @@ func (m *SQLiteStore) ConfigKey() string {
 }
 
 func (m *SQLiteStore) Options(options *gorm.Config) {
+	m.mu.Lock()
 	m.options = options
+	m.mu.Unlock()
 }
 
 func (m *SQLiteStore) Callback(fn callback) {
+	m.mu.Lock()
 	m.callback = fn
 	m.hasCallback = true
+	m.mu.Unlock()
 }
 
 func (m *SQLiteStore) Use() *gorm.DB {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.gormDB != nil {
 		return m.gormDB
 	}
@@ -61,21 +71,24 @@ func (m *SQLiteStore) Use() *gorm.DB {
 		},
 	}
 
-	if m.options != nil {
-		if m.options.Logger == nil {
-			m.options.Logger = conf.Logger
+	options := m.options
+	if options != nil {
+		if options.Logger == nil {
+			options.Logger = conf.Logger
 		}
 
-		if m.options.NamingStrategy == nil {
-			m.options.NamingStrategy = conf.NamingStrategy
+		if options.NamingStrategy == nil {
+			options.NamingStrategy = conf.NamingStrategy
 		}
 	} else {
-		m.options = conf
+		options = conf
 	}
 
-	db, err := gorm.Open(sqlite.Open(r.Database), conf)
+	db, err := gorm.Open(sqlite.Open(r.Database), options)
 	if err != nil {
-		logger.SugarLog.Error("Connect to SQLite error", zap.String("error", err.Error()))
+		if logger.SugarLog != nil {
+			logger.SugarLog.Error("Connect to SQLite error", zap.String("error", err.Error()))
+		}
 		return nil
 	}
 
@@ -85,9 +98,11 @@ func (m *SQLiteStore) Use() *gorm.DB {
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		logger.SugarLog.Error("Ping SQLite error",
-			zap.String("error", err.Error()),
-		)
+		if logger.SugarLog != nil {
+			logger.SugarLog.Error("Ping SQLite error",
+				zap.String("error", err.Error()),
+			)
+		}
 		return nil
 	}
 

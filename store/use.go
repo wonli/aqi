@@ -16,53 +16,37 @@ var (
 )
 
 func DB(configKey string, options ...*gorm.Config) *MySQLStore {
-	if store, ok := mysqlStores.Load(configKey); ok {
-		return store.(*MySQLStore)
-	}
-
 	newStore := &MySQLStore{configKey: configKey}
 	if len(options) > 0 && options[0] != nil {
 		newStore.Options(options[0])
 	}
 
-	mysqlStores.Store(configKey, newStore)
-	return newStore
+	store, _ := mysqlStores.LoadOrStore(configKey, newStore)
+	return store.(*MySQLStore)
 }
 
 func SQLite(configKey string, options ...*gorm.Config) *SQLiteStore {
-	if store, ok := sqliteStores.Load(configKey); ok {
-		return store.(*SQLiteStore)
-	}
-
 	newStore := &SQLiteStore{configKey: configKey}
 	if len(options) > 0 && options[0] != nil {
 		newStore.Options(options[0])
 	}
 
-	sqliteStores.Store(configKey, newStore)
-	return newStore
+	store, _ := sqliteStores.LoadOrStore(configKey, newStore)
+	return store.(*SQLiteStore)
 }
 
 func Redis(configKey string) *RedisStore {
-	if store, ok := redisStores.Load(configKey); ok {
-		return store.(*RedisStore)
-	}
-
 	newStore := &RedisStore{configKey: configKey}
-	redisStores.Store(configKey, newStore)
-	return newStore
+	store, _ := redisStores.LoadOrStore(configKey, newStore)
+	return store.(*RedisStore)
 }
 
 func SqlServer(configKey string, options ...*gorm.Config) *SqlServerStore {
-	if store, ok := sqlServerStores.Load(configKey); ok {
-		return store.(*SqlServerStore)
-	}
-
 	newStore := &SqlServerStore{configKey: configKey}
 	if len(options) > 0 && options[0] != nil {
 		newStore.Options(options[0])
 	}
 
-	sqlServerStores.Store(configKey, newStore)
-	return newStore
+	store, _ := sqlServerStores.LoadOrStore(configKey, newStore)
+	return store.(*SqlServerStore)
 }

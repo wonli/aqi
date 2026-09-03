@@ -29,19 +29,19 @@ type Stats struct {
 	SvrMemoryPct float64    `json:"svrMemoryPct"` // Total memory
 	LoadAverage  [2]float64 `json:"loadAverage"`  // 1, 5 minutes average load
 
-	CPUUsage       float64 `json:"CPUUsage"`            // Current process's CPU usage rate
-	MemoryUsage    float64 `json:"memoryUsage"`         // Current process's memory usage
-	MemoryUsagePct float64 `json.json:"memoryUsagePct"` // Current process's memory usage percentage
-	ThreadCount    int     `json:"threadCount"`         // Current process's thread count
-	Goroutines     int     `json:"goroutines"`          // Number of Go coroutines
-	HeapAlloc      float64 `json:"heapAlloc"`           // Memory allocated in the heap currently
-	HeapSys        float64 `json:"heapSys"`             // Total heap memory obtained from the system
-	HeapInuse      float64 `json:"heapInuse"`           // Heap memory in use
-	HeapPct        float64 `json:"heapPct"`             // Percentage of heap memory obtained from the system
+	CPUUsage       float64 `json:"CPUUsage"`        // Current process's CPU usage rate
+	MemoryUsage    float64 `json:"memoryUsage"`     // Current process's memory usage
+	MemoryUsagePct float64 `json:"memoryUsagePct"`  // Current process's memory usage percentage
+	ThreadCount    int     `json:"threadCount"`     // Current process's thread count
+	Goroutines     int     `json:"goroutines"`      // Number of Go coroutines
+	HeapAlloc      float64 `json:"heapAlloc"`       // Memory allocated in the heap currently
+	HeapSys        float64 `json:"heapSys"`         // Total heap memory obtained from the system
+	HeapInuse      float64 `json:"heapInuse"`       // Heap memory in use
+	HeapPct        float64 `json:"heapPct"`         // Percentage of heap memory obtained from the system
 
-	LoginCount  int `json:"loginCount"`      // Online users
-	GuestCount  int `json.json:"guestCount"` // Visitors
-	Connections int `json:"connections"`     // Current process's network connections
+	LoginCount  int `json:"loginCount"`  // Online users
+	GuestCount  int `json:"guestCount"`  // Visitors
+	Connections int `json:"connections"` // Current process's network connections
 
 	SentRate float64 `json:"sentRate"` // Sending rate KB/s
 	RecvRate float64 `json:"recvRate"` // Receiving rate KB/s
@@ -55,6 +55,9 @@ type Collector struct {
 	mu       sync.Mutex // mu
 	stats    []Stats    // Slice for storing statistical data
 	netStats NetStats   // transmission rate
+
+	maxMemoryUsage float64
+	maxGoroutines  int
 
 	capacity  int // Maximum capacity of the slice
 	interval2 time.Duration
@@ -94,8 +97,7 @@ func (sc *Collector) doCollect(interval time.Duration) {
 	}
 
 	// User data
-	currentStats.LoginCount = ws.Hub.LoginCount
-	currentStats.GuestCount = ws.Hub.GuestCount
+	currentStats.LoginCount, currentStats.GuestCount = ws.Hub.Counts()
 
 	// Get CPU usage rate
 	cpuPercentages, err := cpu.Percent(interval, false)
@@ -162,10 +164,6 @@ func (sc *Collector) doCollect(interval time.Duration) {
 			if err == nil {
 				currentStats.MemoryUsagePct = float64(memInfo.RSS) / float64(vmem.Total) * 100
 			}
-
-			if currentStats.MemoryUsage > currentStats.MaxMemoryUsage {
-				currentStats.MaxMemoryUsage = currentStats.MemoryUsage
-			}
 		}
 
 		// Get current process's thread count
@@ -188,9 +186,6 @@ func (sc *Collector) doCollect(interval time.Duration) {
 	currentStats.HeapAlloc = formatMegabytes(bytesToMegabytes(memStats.HeapAlloc))
 	currentStats.HeapSys = formatMegabytes(bytesToMegabytes(memStats.HeapSys))
 	currentStats.HeapInuse = formatMegabytes(bytesToMegabytes(memStats.HeapInuse))
-	if currentStats.Goroutines > currentStats.MaxGoroutines {
-		currentStats.MaxGoroutines = currentStats.Goroutines
-	}
 
 	// Get heap memory usage
 	if currentStats.HeapSys > 0 {
@@ -202,6 +197,7 @@ func (sc *Collector) doCollect(interval time.Duration) {
 
 	// Lock and update statistical data
 	sc.mu.Lock()
+	sc.updatePeaksLocked(&currentStats)
 	sc.stats = append(sc.stats, currentStats)
 	if len(sc.stats) > sc.capacity {
 		sc.stats = sc.stats[1:]
@@ -210,6 +206,24 @@ func (sc *Collector) doCollect(interval time.Duration) {
 
 	// Publish data
 	ws.Hub.PubSub.Pub("sys:status", currentStats)
+}
+
+func (sc *Collector) updatePeaks(currentStats *Stats) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.updatePeaksLocked(currentStats)
+}
+
+func (sc *Collector) updatePeaksLocked(currentStats *Stats) {
+	if currentStats.MemoryUsage > sc.maxMemoryUsage {
+		sc.maxMemoryUsage = currentStats.MemoryUsage
+	}
+	if currentStats.Goroutines > sc.maxGoroutines {
+		sc.maxGoroutines = currentStats.Goroutines
+	}
+
+	currentStats.MaxMemoryUsage = sc.maxMemoryUsage
+	currentStats.MaxGoroutines = sc.maxGoroutines
 }
 
 // GetStats returns all the collected statistical data

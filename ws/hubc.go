@@ -18,6 +18,7 @@ type Hubc struct {
 	//用户数统计
 	LoginCount int
 	GuestCount int
+	statsMu    sync.RWMutex
 
 	//发布订阅
 	PubSub *PubSub
@@ -117,12 +118,26 @@ func (h *Hubc) guard() {
 		}
 		h.clientsMu.RUnlock()
 
-		h.LoginCount = userCount
-		h.GuestCount = guestCount
+		h.setCounts(userCount, guestCount)
 
 		h.PubSub.Pub("userCount", userCount)
 		h.PubSub.Pub("guestsCount", guestCount)
 	}
+}
+
+func (h *Hubc) setCounts(loginCount, guestCount int) {
+	h.statsMu.Lock()
+	h.LoginCount = loginCount
+	h.GuestCount = guestCount
+	h.statsMu.Unlock()
+}
+
+func (h *Hubc) Counts() (loginCount, guestCount int) {
+	h.statsMu.RLock()
+	loginCount = h.LoginCount
+	guestCount = h.GuestCount
+	h.statsMu.RUnlock()
+	return
 }
 
 func (h *Hubc) Broadcast(msg []byte) {

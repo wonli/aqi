@@ -1,15 +1,17 @@
 package store
 
 import (
-    "github.com/spf13/viper"
-    "go.uber.org/zap"
-    "gorm.io/driver/mysql"
-    "gorm.io/gorm"
-    gormLogger "gorm.io/gorm/logger"
-    "gorm.io/gorm/schema"
+	"sync"
 
-    "github.com/wonli/aqi/internal/config"
-    "github.com/wonli/aqi/logger"
+	"github.com/spf13/viper"
+	"go.uber.org/zap"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	gormLogger "gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
+
+	"github.com/wonli/aqi/internal/config"
+	"github.com/wonli/aqi/logger"
 )
 
 type MySQLStore struct {
@@ -19,6 +21,7 @@ type MySQLStore struct {
 	options     *gorm.Config
 	callback    callback
 	hasCallback bool
+	mu          sync.Mutex
 }
 
 func (m *MySQLStore) Config() *config.MySQL {
@@ -36,18 +39,25 @@ func (m *MySQLStore) ConfigKey() string {
 }
 
 func (m *MySQLStore) Options(options *gorm.Config) {
+	m.mu.Lock()
 	m.options = options
+	m.mu.Unlock()
 }
 
 func (m *MySQLStore) Callback(fn callback) {
+	m.mu.Lock()
 	m.callback = fn
 	m.hasCallback = true
+	m.mu.Unlock()
 }
 
 func (m *MySQLStore) Use() *gorm.DB {
-    if m.gormDB != nil {
-        return m.gormDB
-    }
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.gormDB != nil {
+		return m.gormDB
+	}
 
 	r := m.Config()
 	if r == nil {
@@ -58,30 +68,33 @@ func (m *MySQLStore) Use() *gorm.DB {
 		return nil
 	}
 
-    conf := &gorm.Config{
-        Logger: logger.NewZapGormLogger(logger.SugarLog, gormLogger.Config{LogLevel: gormLogger.LogLevel(r.LogLevel)}),
-        NamingStrategy: schema.NamingStrategy{
-            TablePrefix: r.Prefix,
-        },
-    }
-
-	if m.options != nil {
-		if m.options.Logger == nil {
-			m.options.Logger = conf.Logger
-		}
-
-		if m.options.NamingStrategy == nil {
-			m.options.NamingStrategy = conf.NamingStrategy
-		}
-	} else {
-		m.options = conf
+	conf := &gorm.Config{
+		Logger: logger.NewZapGormLogger(logger.SugarLog, gormLogger.Config{LogLevel: gormLogger.LogLevel(r.LogLevel)}),
+		NamingStrategy: schema.NamingStrategy{
+			TablePrefix: r.Prefix,
+		},
 	}
 
-    db, err := gorm.Open(mysql.Open(r.GetDsn()), m.options)
-    if err != nil {
-        logger.SugarLog.Error("Failed to connect to MySQL database", zap.String("error", err.Error()))
-        return nil
-    }
+	options := m.options
+	if options != nil {
+		if options.Logger == nil {
+			options.Logger = conf.Logger
+		}
+
+		if options.NamingStrategy == nil {
+			options.NamingStrategy = conf.NamingStrategy
+		}
+	} else {
+		options = conf
+	}
+
+	db, err := gorm.Open(mysql.Open(r.GetDsn()), options)
+	if err != nil {
+		if logger.SugarLog != nil {
+			logger.SugarLog.Error("Failed to connect to MySQL database", zap.String("error", err.Error()))
+		}
+		return nil
+	}
 
 	if m.hasCallback {
 		m.callback(db)
@@ -89,7 +102,9 @@ func (m *MySQLStore) Use() *gorm.DB {
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		logger.SugarLog.Error("Error pinging database", zap.String("error", err.Error()))
+		if logger.SugarLog != nil {
+			logger.SugarLog.Error("Error pinging database", zap.String("error", err.Error()))
+		}
 		return nil
 	}
 

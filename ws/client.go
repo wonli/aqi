@@ -351,7 +351,9 @@ func (c *Client) Log(symbol string, msg ...string) {
 		s = fmt.Sprintf("%s %s %s", c.IpAddressPort, symbol, s)
 	}
 
-	logger.SugarLog.Info(s)
+	if logger.SugarLog != nil {
+		logger.SugarLog.Info(s)
+	}
 
 	c.mu.Lock()
 	c.recentLogs[c.recentIdx] = fmt.Sprintf("%s %s", time.Now().Format(time.RFC3339), s)
