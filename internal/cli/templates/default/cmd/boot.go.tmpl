@@ -8,6 +8,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/spf13/cobra"
+	"github.com/wonli/aqi/service"
 )
 
 var timezone string
@@ -16,6 +17,12 @@ var configFile string
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&timezone, "tz", "t", "default", "指定时区")
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "config.yaml", "指定配置文件路径，默认当前路径下config.yaml")
+	rootCmd.AddCommand(service.Command(service.CommandOptions{
+		Self: true,
+		Config: func() string {
+			return configFile
+		},
+	}))
 	cobra.OnInitialize(func() {
 	})
 }
