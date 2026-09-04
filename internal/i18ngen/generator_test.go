@@ -44,7 +44,7 @@ func profile(a *Context) {
 	if !strings.Contains(text, "user.login.400: 登录失败") || !strings.Contains(text, "user.profile.404: 用户不存在") {
 		t.Fatalf("unexpected catalog:\n%s", text)
 	}
-	if !strings.Contains(text, "user.login.401: \"\"") || !strings.Contains(text, "user.login.402: \"\"") {
+	if !strings.Contains(text, "user.login.401:\n") || !strings.Contains(text, "user.login.402:\n") {
 		t.Fatalf("dynamic messages should keep empty placeholders:\n%s", text)
 	}
 	if strings.Contains(text, "动态 code") {
@@ -52,7 +52,7 @@ func profile(a *Context) {
 	}
 
 	// Manual values are business-owned and must survive regeneration.
-	text = strings.Replace(text, "user.login.402: \"\"", "user.login.402: 超级管理员", 1)
+	text = strings.Replace(text, "user.login.402:\n", "user.login.402: 超级管理员\n", 1)
 	if err := os.WriteFile(output, []byte(text), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func Actions() {
 		t.Fatal(err)
 	}
 	_, _, _, err := Generate(root, "data", "zh")
-	if err == nil || !strings.Contains(err.Error(), "duplicate i18n key user.login.400") {
+	if err == nil || !strings.Contains(err.Error(), "duplicate i18n key: user.login.400") {
 		t.Fatalf("Generate() error=%v, want duplicate key", err)
 	}
 }
@@ -98,7 +98,7 @@ func Actions() {
 		t.Fatal(err)
 	}
 	_, _, _, err := Generate(root, "data", "zh")
-	if err == nil || !strings.Contains(err.Error(), "duplicate i18n key hi.1001") {
+	if err == nil || !strings.Contains(err.Error(), "duplicate i18n key: hi.1001") {
 		t.Fatalf("Generate() error=%v, want duplicate dynamic key", err)
 	}
 }
