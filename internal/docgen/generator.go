@@ -521,8 +521,8 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string, changelog *Change
 }
 
 // preserveGeneratedState 在文档实际内容没有变化时保留上一次生成状态。
-// generatedAt 只表示文档内容最后一次变化时间；没有新的 changelog 时也保留旧值，
-// 避免重复执行 docgen 产生无意义的 Git diff。
+// generatedAt 和 metadata.version 都表示文档实际变化时的生成状态，
+// 普通 Git commit 不应导致 API 文档产生无意义 diff。
 func preserveGeneratedState(outputPath string, doc *JSONDocument) {
 	oldData, err := os.ReadFile(outputPath)
 	if err != nil {
@@ -539,9 +539,13 @@ func preserveGeneratedState(outputPath string, doc *JSONDocument) {
 	}
 
 	oldGeneratedAt := oldDoc.GeneratedAt
+	oldVersion := oldDoc.Metadata.Version
+
 	oldDoc.GeneratedAt = ""
+	oldDoc.Metadata.Version = ""
 	newDoc := *doc
 	newDoc.GeneratedAt = ""
+	newDoc.Metadata.Version = ""
 
 	oldComparable, err := json.Marshal(oldDoc)
 	if err != nil {
@@ -553,6 +557,7 @@ func preserveGeneratedState(outputPath string, doc *JSONDocument) {
 	}
 	if bytes.Equal(oldComparable, newComparable) {
 		doc.GeneratedAt = oldGeneratedAt
+		doc.Metadata.Version = oldVersion
 	}
 }
 
