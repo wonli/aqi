@@ -312,12 +312,13 @@ func runDocgen(routerDir, outputDir, configFile, workDir, format string) error {
 			continue
 		}
 
-		// 生成文件名
+		// 生成文件名：去掉路由源码文件的 cmd_ 前缀，保持文件名与命令语义一致。
 		baseName := strings.TrimSuffix(rf.FileName, ".go")
+		docName := strings.TrimPrefix(baseName, "cmd_")
 		var docFileName string
 		var outputPath string
 		if format == "markdown" {
-			docFileName = fmt.Sprintf("cmd_api_%s.md", baseName)
+			docFileName = docName + ".md"
 			outputPath = filepath.Join(outputDir, docFileName)
 			// 为单个路由文件生成 Markdown 文档
 			singleRouterFiles := []docgen.RouterFile{rf}
@@ -326,7 +327,7 @@ func runDocgen(routerDir, outputDir, configFile, workDir, format string) error {
 				continue
 			}
 		} else {
-			docFileName = fmt.Sprintf("cmd_api_%s.json", baseName)
+			docFileName = docName + ".json"
 			outputPath = filepath.Join(outputDir, docFileName)
 			// 为单个路由文件生成 JSON 文档，传入全局 changelog
 			singleRouterFiles := []docgen.RouterFile{rf}
@@ -336,10 +337,8 @@ func runDocgen(routerDir, outputDir, configFile, workDir, format string) error {
 			}
 		}
 
-		// 生成文档名称和标签
-		docName := baseName
-		// 将 baseName 转换为标题格式（例如 "action_admin" -> "Action Admin API"）
-		parts := strings.Split(strings.ReplaceAll(baseName, "_", " "), " ")
+		// 将文档名称转换为标题格式（例如 "api_action" -> "Api Action API"）
+		parts := strings.Split(strings.ReplaceAll(docName, "_", " "), " ")
 		for i, part := range parts {
 			if len(part) > 0 {
 				parts[i] = strings.ToUpper(part[:1]) + strings.ToLower(part[1:])
