@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"mime"
 	"net/http"
 	"path"
@@ -36,7 +37,7 @@ type config struct {
 
 // Handler returns an HTTP handler for embedded AQI API documentation.
 // The project FS only needs to embed generated document files and doc-config.yaml.
-func Handler(projectFS embed.FS) http.Handler {
+func Handler(projectFS fs.FS) http.Handler {
 	cfg := loadConfig(projectFS)
 	viewer := renderViewer(cfg.AppDocuments)
 	allowed := make(map[string]struct{}, len(cfg.AppDocuments))
@@ -48,7 +49,7 @@ func Handler(projectFS embed.FS) http.Handler {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fileName := path.Base(path.Clean(r.URL.Path))
-		if r.URL.Path == "" || strings.HasSuffix(r.URL.Path, "/") || fileName == "." {
+		if r.URL.Path == "" || strings.HasSuffix(r.URL.Path, "/") || fileName == "." || path.Ext(fileName) == "" {
 			serveViewer(w, viewer)
 			return
 		}
@@ -58,7 +59,7 @@ func Handler(projectFS embed.FS) http.Handler {
 			return
 		}
 
-		data, err := projectFS.ReadFile(fileName)
+		data, err := fs.ReadFile(projectFS, fileName)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -73,8 +74,8 @@ func Handler(projectFS embed.FS) http.Handler {
 	return basicAuthMiddleware(handler, cfg.Auth)
 }
 
-func loadConfig(projectFS embed.FS) config {
-	data, err := projectFS.ReadFile("doc-config.yaml")
+func loadConfig(projectFS fs.FS) config {
+	data, err := fs.ReadFile(projectFS, "doc-config.yaml")
 	if err != nil {
 		return config{}
 	}
