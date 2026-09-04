@@ -52,7 +52,7 @@ func profile(a *Context) {
 	}
 
 	// Manual values are business-owned and must survive regeneration.
-	text = strings.Replace(text, "user.login.402: \"\"", "user.login.402: 超级管理员")
+	text = strings.Replace(text, "user.login.402: \"\"", "user.login.402: 超级管理员", 1)
 	if err := os.WriteFile(output, []byte(text), 0644); err != nil {
 		t.Fatal(err)
 	}
