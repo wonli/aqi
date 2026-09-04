@@ -4,9 +4,7 @@ import (
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
-	"encoding/json/v2"
 	"fmt"
-	"html/template"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,83 +206,31 @@ func generateDocgenFile(docsDir, packageName, workDir string) error {
 		}
 	}
 
-	// 3. 读取配置文件获取文档列表并注入到HTML
-	htmlTemplateContent, err := docgenTemplateFS.ReadFile("templates/docgen/api_viewer.html")
-	if err != nil {
-		return fmt.Errorf("failed to read HTML template: %w", err)
-	}
-
-	var docsConfigJSON string = "[]"
-	if configData, err := os.ReadFile(configFileInDocs); err == nil {
-		var config struct {
-			AppDocuments []struct {
-				Name  string `yaml:"name" json:"name"`
-				Label string `yaml:"label" json:"label"`
-				File  string `yaml:"file" json:"file"`
-			} `yaml:"appDocuments" json:"appDocuments"`
-		}
-		if err := yaml.Unmarshal(configData, &config); err == nil {
-			if jsonData, err := json.Marshal(config.AppDocuments); err == nil {
-				docsConfigJSON = string(jsonData)
-			}
-		}
-	}
-
-	// 直接使用字符串替换注入文档列表（避免与Vue.js的{{ }}语法冲突）
-	// 将 {{.DocsConfig}} 替换为实际的JSON字符串
-	htmlContent := strings.ReplaceAll(string(htmlTemplateContent), "{{.DocsConfig}}", docsConfigJSON)
-
-	// 写入HTML文件
-	htmlPath := filepath.Join(docsDir, "api_viewer.html")
-	if err := os.WriteFile(htmlPath, []byte(htmlContent), 0644); err != nil {
-		return fmt.Errorf("failed to write HTML file: %w", err)
-	}
-	fmt.Printf("已生成 api_viewer.html 到 docs 目录（已注入文档列表）\n")
-
-	// 4. 读取docgen.go模板
+	// 3. 读取docgen.go模板
 	tmplContent, err := docgenTemplateFS.ReadFile("templates/docgen/docgen.go.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to read template: %w", err)
 	}
 
-	// 5. 根据格式确定 embed 模式
+	// 4. 根据格式确定 embed 模式
 	format := strings.ToLower(docgenFormatFlag)
 	if format != "json" && format != "markdown" {
 		format = "json" // 默认使用 json
 	}
 	var embedPattern string
 	if format == "markdown" {
-		embedPattern = "api_viewer.html *.md doc-config.yaml"
+		embedPattern = "*.md doc-config.yaml"
 	} else {
-		embedPattern = "api_viewer.html *.json doc-config.yaml"
+		embedPattern = "*.json doc-config.yaml"
 	}
 
 	// 替换模板中的 embed 指令
-	tmplContentStr := strings.ReplaceAll(string(tmplContent), "api_viewer.html *.json doc-config.yaml", embedPattern)
+	tmplContent = []byte(strings.ReplaceAll(string(tmplContent), "*.json doc-config.yaml", embedPattern))
 
-	// 6. 解析模板
-	tmpl, err := template.New("docgen.go").Parse(tmplContentStr)
-	if err != nil {
-		return fmt.Errorf("failed to parse template: %w", err)
-	}
-
-	// 7. 准备数据
-	tmplData := struct {
-		PackageName string
-	}{
-		PackageName: packageName,
-	}
-
-	// 8. 生成文件
+	// 5. 生成文件
 	outputPath := filepath.Join(docsDir, "docgen.go")
-	outputFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer outputFile.Close()
-
-	if err := tmpl.Execute(outputFile, tmplData); err != nil {
-		return fmt.Errorf("failed to execute template: %w", err)
+	if err := os.WriteFile(outputPath, tmplContent, 0644); err != nil {
+		return fmt.Errorf("failed to write docgen.go: %w", err)
 	}
 
 	return nil
