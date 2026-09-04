@@ -1,6 +1,7 @@
 package docgen
 
 import (
+	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
@@ -114,7 +115,7 @@ func GenerateMarkdown(routerFiles []RouterFile, outputPath string) error {
 	}
 
 	// 写入文件
-	return os.WriteFile(outputPath, []byte(buf.String()), 0644)
+	return writeFileIfChanged(outputPath, []byte(buf.String()))
 }
 
 // getFileTitle 获取文件标题
@@ -502,6 +503,8 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string, changelog *Change
 		doc.Changelog = changelog
 	}
 
+	preserveGeneratedState(outputPath, &doc)
+
 	// 生成 JSON
 	jsonData, err := json.Marshal(
 		doc,
@@ -514,7 +517,51 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string, changelog *Change
 	}
 
 	// 写入文件
-	return os.WriteFile(outputPath, jsonData, 0644)
+	return writeFileIfChanged(outputPath, jsonData)
+}
+
+// preserveGeneratedState 在文档实际内容没有变化时保留上一次生成状态。
+// generatedAt 只表示文档内容最后一次变化时间；没有新的 changelog 时也保留旧值，
+// 避免重复执行 docgen 产生无意义的 Git diff。
+func preserveGeneratedState(outputPath string, doc *JSONDocument) {
+	oldData, err := os.ReadFile(outputPath)
+	if err != nil {
+		return
+	}
+
+	var oldDoc JSONDocument
+	if err := json.Unmarshal(oldData, &oldDoc); err != nil {
+		return
+	}
+
+	if doc.Changelog == nil {
+		doc.Changelog = oldDoc.Changelog
+	}
+
+	oldGeneratedAt := oldDoc.GeneratedAt
+	oldDoc.GeneratedAt = ""
+	newDoc := *doc
+	newDoc.GeneratedAt = ""
+
+	oldComparable, err := json.Marshal(oldDoc)
+	if err != nil {
+		return
+	}
+	newComparable, err := json.Marshal(newDoc)
+	if err != nil {
+		return
+	}
+	if bytes.Equal(oldComparable, newComparable) {
+		doc.GeneratedAt = oldGeneratedAt
+	}
+}
+
+func writeFileIfChanged(outputPath string, data []byte) error {
+	oldData, err := os.ReadFile(outputPath)
+	if err == nil && bytes.Equal(oldData, data) {
+		return nil
+	}
+	return os.WriteFile(outputPath, data, 0644)
 }
 
 // GenerateGlobalChangelog 基于所有路由文件生成全局接口更新日志
