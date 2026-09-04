@@ -76,9 +76,9 @@ func Init(c config.Logger) {
 	fileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&hook), zap.InfoLevel)
 	rFileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&runtimeHook), zap.InfoLevel)
 
-	ZapLog = zap.New(zapcore.NewTee(stdLog, fileLog), zap.AddCaller(), zap.Development())
-	FileLog = zap.New(zapcore.NewTee(fileLog), zap.AddCaller(), zap.Development())
-	RuntimeLog = zap.New(zapcore.NewTee(rFileLog), zap.AddCaller(), zap.Development())
+	ZapLog = zap.New(zapcore.NewTee(stdLog, fileLog), zap.AddCaller())
+	FileLog = zap.New(zapcore.NewTee(fileLog), zap.AddCaller())
+	RuntimeLog = zap.New(zapcore.NewTee(rFileLog), zap.AddCaller())
 
 	//sugar
 	SugarLog = ZapLog.Sugar()
