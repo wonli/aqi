@@ -10,13 +10,14 @@ var GinBinding *Manager
 func GinValidator() error {
 	// 修改gin框架中的Validator引擎属性
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
-		v.RegisterTagNameFunc(vc.tagNameFunc)
+		config := defaultValidatorConfig()
+		v.RegisterTagNameFunc(config.tagNameFunc)
 		GinBinding = &Manager{
 			Validator: v,
-			Trans:     vc.getTranslator(),
+			Trans:     config.getTranslator(),
 		}
 
-		return vc.registerTrans(v, GinBinding.Trans)
+		return config.registerTrans(v, GinBinding.Trans)
 	}
 
 	return nil

@@ -1,12 +1,10 @@
 package validate
 
 import (
-	"os"
 	"reflect"
 	"strings"
 	"sync"
 
-	"github.com/fatih/color"
 	"github.com/go-playground/locales"
 	"github.com/go-playground/locales/en"
 	"github.com/go-playground/locales/zh"
@@ -17,8 +15,10 @@ import (
 	zhT "github.com/go-playground/validator/v10/translations/zh"
 )
 
-var sg sync.Once
-var vc *ValidatorConfig
+var (
+	vcMu sync.RWMutex
+	vc   *ValidatorConfig
+)
 
 type ValidatorConfig struct {
 	locale string
@@ -28,19 +28,41 @@ type ValidatorConfig struct {
 
 // InitTranslator validator默认仅支持中英文
 func InitTranslator(locale string) *ValidatorConfig {
-	sg.Do(func() {
-		zhl := zh.New() // 中文翻译器
-		enl := en.New() // 英文翻译器
+	config := newValidatorConfig(locale)
+	vcMu.Lock()
+	vc = config
+	vcMu.Unlock()
+	return config
+}
 
-		//赋值给valid
-		vc = &ValidatorConfig{
-			locale: locale,
-			zh:     zhl,
-			en:     enl,
-		}
-	})
+func newValidatorConfig(locale string) *ValidatorConfig {
+	locale = normalizeLocale(locale)
+	return &ValidatorConfig{
+		locale: locale,
+		zh:     zh.New(),
+		en:     en.New(),
+	}
+}
 
-	return vc
+func normalizeLocale(locale string) string {
+	locale = strings.TrimSpace(strings.ToLower(locale))
+	if i := strings.IndexAny(locale, "-_"); i > 0 {
+		locale = locale[:i]
+	}
+	if locale != "zh" && locale != "en" {
+		return "en"
+	}
+	return locale
+}
+
+func defaultValidatorConfig() *ValidatorConfig {
+	vcMu.RLock()
+	config := vc
+	vcMu.RUnlock()
+	if config != nil {
+		return config
+	}
+	return InitTranslator("zh")
 }
 
 // 处理字段名称
@@ -67,17 +89,12 @@ func (a *ValidatorConfig) tagNameFunc(fld reflect.StructField) string {
 func (a *ValidatorConfig) getTranslator() ut.Translator {
 	// 第一个参数是备用（fallback）的语言环境
 	// 后面的参数是应该支持的语言环境（支持多个）
-	// uni := ut.New(zhl, zhl) 也是可以的
 	uni := ut.New(a.en, a.zh, a.en)
-
-	// locale 通常取决于 http 请求头的 'Accept-Language'
-	// 也可以使用 uni.FindTranslator(...) 传入多个locale进行查找
 	trans, ok := uni.GetTranslator(a.locale)
-	if !ok {
-		color.Red("uni.GetTranslator(%s) failed", a.locale)
-		os.Exit(0)
+	if ok {
+		return trans
 	}
-
+	trans, _ = uni.GetTranslator("en")
 	return trans
 }
 
@@ -85,8 +102,6 @@ func (a *ValidatorConfig) getTranslator() ut.Translator {
 func (a *ValidatorConfig) registerTrans(v *validator.Validate, trans ut.Translator) error {
 	var err error
 	switch a.locale {
-	case "en":
-		err = enT.RegisterDefaultTranslations(v, trans)
 	case "zh":
 		err = zhT.RegisterDefaultTranslations(v, trans)
 	default:

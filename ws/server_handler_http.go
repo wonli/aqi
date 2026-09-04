@@ -52,6 +52,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 		HttpRequest:    r,
 		HttpWriter:     w,
 	}
+	c.SetLanguage(r.URL.Query().Get("lang"))
 	c.initContext(r.Context())
 
 	c.Hub.Connection <- c

@@ -3,6 +3,8 @@ package ws
 import (
 	"net/http"
 	"sync"
+
+	"github.com/wonli/aqi/i18n"
 )
 
 type Server struct {
@@ -10,9 +12,11 @@ type Server struct {
 
 	fn http.HandlerFunc
 
-	port     string
-	isDev    bool
-	dataPath string
+	port            string
+	isDev           bool
+	dataPath        string
+	defaultLanguage string
+	i18n             *i18n.Manager
 }
 
 var (
@@ -24,8 +28,9 @@ func NewServer(engine http.Handler) *Server {
 	once.Do(func() {
 		InitManager()
 		wss = &Server{
-			engine: engine,
-			fn:     HttpHandler,
+			engine:          engine,
+			fn:              HttpHandler,
+			defaultLanguage: "zh",
 		}
 	})
 
@@ -48,8 +53,28 @@ func (s *Server) SetIsDev(dev bool) {
 	s.isDev = dev
 }
 
-func (s *Server) Init() {
+func (s *Server) SetLanguage(language string) {
+	if language != "" {
+		s.defaultLanguage = language
+	}
+}
 
+func (s *Server) DefaultLanguage() string {
+	if s == nil || s.defaultLanguage == "" {
+		return "zh"
+	}
+	return s.defaultLanguage
+}
+
+func (s *Server) Init() {
+	s.i18n = i18n.New(s.dataPath, s.DefaultLanguage())
+}
+
+func (s *Server) translate(language, action string, code int, msg string) string {
+	if s == nil || s.i18n == nil {
+		return msg
+	}
+	return s.i18n.Translate(language, action, code, msg)
 }
 
 func (s *Server) Run() {
