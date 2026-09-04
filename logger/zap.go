@@ -20,6 +20,7 @@ var ZapLog *zap.Logger
 var FileLog *zap.Logger
 var RuntimeLog *zap.Logger
 var SugarLog *zap.SugaredLogger
+var fileBufferPool = buffer.NewPool()
 
 func Init(c config.Logger) {
 	if c.LogPath == "" {
@@ -186,7 +187,7 @@ func (e *fileStyleEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Fie
 	}
 
 	// 创建输出缓冲区
-	buf := buffer.NewPool().Get()
+	buf := fileBufferPool.Get()
 
 	// 标题分隔线
 	buf.AppendString("\n---------------------------------- START ----------------------------------\n")
