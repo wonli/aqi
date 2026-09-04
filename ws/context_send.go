@@ -18,17 +18,7 @@ func (c *Context) SendOk() {
 
 // SendCode 发送状态消息
 func (c *Context) SendCode(code int, msg string) {
-	//开发模式下更新默认语言文件
-	if c.Server.isDev && c.language == c.defaultLng {
-		c.i18nSet(code, msg)
-	}
-
-	if c.language != c.defaultLng {
-		translate := c.i18nLoad(code, msg)
-		if translate != "" {
-			msg = translate
-		}
-	}
+	msg = c.i18nLoad(code, msg)
 
 	m := New(c.Action).WithId(c.Id).WithCode(code).WithMsg(msg)
 

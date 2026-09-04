@@ -6,27 +6,27 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-var once sync.Once
-var normalManager *Manager
+var normalManagers sync.Map
 
 func Normal(language string) *Manager {
-	once.Do(func() {
-		cc := InitTranslator(language)
+	language = normalizeLocale(language)
+	if value, ok := normalManagers.Load(language); ok {
+		return value.(*Manager)
+	}
 
-		validate := validator.New()
-		validate.RegisterTagNameFunc(cc.tagNameFunc)
+	cc := newValidatorConfig(language)
+	validate := validator.New()
+	validate.RegisterTagNameFunc(cc.tagNameFunc)
 
-		translator := cc.getTranslator()
-		err := cc.registerTrans(validate, translator)
-		if err != nil {
-			panic(err)
-		}
+	translator := cc.getTranslator()
+	if err := cc.registerTrans(validate, translator); err != nil {
+		panic(err)
+	}
 
-		normalManager = &Manager{
-			Validator: validate,
-			Trans:     translator,
-		}
-	})
-
-	return normalManager
+	manager := &Manager{
+		Validator: validate,
+		Trans:     translator,
+	}
+	actual, _ := normalManagers.LoadOrStore(language, manager)
+	return actual.(*Manager)
 }

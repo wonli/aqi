@@ -31,7 +31,7 @@ func (c *Context) BindingValidateJson(s any) error {
 		return err
 	}
 
-	err = validate.Normal(c.language).Validate(s)
+	err = validate.Normal(c.Language()).Validate(s)
 	if err != nil {
 		return err
 	}

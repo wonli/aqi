@@ -23,6 +23,7 @@ func (a *AppConfig) Start() {
 		server := ws.NewServer(a.HttpServer)
 		server.SetDataPath(a.DataPath)
 		server.SetIsDev(a.devMode)
+		server.SetLanguage(a.Language)
 		server.Init()
 	}
 

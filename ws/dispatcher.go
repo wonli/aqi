@@ -42,6 +42,15 @@ func Dispatcher(c *Client, request string) {
 		return
 	}
 
+	defaultLanguage := "zh"
+	if wss != nil {
+		defaultLanguage = wss.DefaultLanguage()
+	}
+	language := c.Language()
+	if language == "" {
+		language = defaultLanguage
+	}
+
 	ctx := &Context{
 		Id:     req.Id,
 		Params: req.Params,
@@ -53,8 +62,8 @@ func Dispatcher(c *Client, request string) {
 		handlers: handlers,
 		ctx:      c.Context(),
 
-		language:   "zh",
-		defaultLng: "zh",
+		language:   language,
+		defaultLng: defaultLanguage,
 	}
 
 	defer ctx.FlushLog()
