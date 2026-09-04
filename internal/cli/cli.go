@@ -5,8 +5,10 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "aqi",
-	Short: "AQI Project Generator",
+	Use:           "aqi",
+	Short:         "AQI Project Generator",
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 func Execute() {
