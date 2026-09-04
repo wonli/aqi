@@ -521,8 +521,7 @@ func GenerateJSON(routerFiles []RouterFile, outputPath string, changelog *Change
 }
 
 // preserveGeneratedState 在文档实际内容没有变化时保留上一次生成状态。
-// generatedAt 和 metadata.version 都表示文档实际变化时的生成状态，
-// 普通 Git commit 不应导致 API 文档产生无意义 diff。
+// Git revision、生成时间和 changelog 的版本时间都属于生成态，不参与 API 内容比较。
 func preserveGeneratedState(outputPath string, doc *JSONDocument) {
 	oldData, err := os.ReadFile(outputPath)
 	if err != nil {
@@ -538,27 +537,36 @@ func preserveGeneratedState(outputPath string, doc *JSONDocument) {
 		doc.Changelog = oldDoc.Changelog
 	}
 
-	oldGeneratedAt := oldDoc.GeneratedAt
-	oldVersion := oldDoc.Metadata.Version
+	oldComparable := comparableDocument(oldDoc)
+	newComparable := comparableDocument(*doc)
 
-	oldDoc.GeneratedAt = ""
-	oldDoc.Metadata.Version = ""
-	newDoc := *doc
-	newDoc.GeneratedAt = ""
-	newDoc.Metadata.Version = ""
-
-	oldComparable, err := json.Marshal(oldDoc)
+	oldData, err = json.Marshal(oldComparable)
 	if err != nil {
 		return
 	}
-	newComparable, err := json.Marshal(newDoc)
+	newData, err := json.Marshal(newComparable)
 	if err != nil {
 		return
 	}
-	if bytes.Equal(oldComparable, newComparable) {
-		doc.GeneratedAt = oldGeneratedAt
-		doc.Metadata.Version = oldVersion
+	if !bytes.Equal(oldData, newData) {
+		return
 	}
+
+	doc.GeneratedAt = oldDoc.GeneratedAt
+	doc.Metadata.Version = oldDoc.Metadata.Version
+	doc.Changelog = oldDoc.Changelog
+}
+
+func comparableDocument(doc JSONDocument) JSONDocument {
+	doc.GeneratedAt = ""
+	doc.Metadata.Version = ""
+	if doc.Changelog != nil {
+		changelog := *doc.Changelog
+		changelog.Version = ""
+		changelog.Timestamp = ""
+		doc.Changelog = &changelog
+	}
+	return doc
 }
 
 func writeFileIfChanged(outputPath string, data []byte) error {
