@@ -247,8 +247,8 @@ func collectHandlerMessages(messages map[string]sourceMessage, action string, bo
 		position := fset.Position(call.Pos())
 		current := sourceMessage{Action: action, Code: code, Msg: msg, File: file, Line: position.Line}
 		key := messageKey(action, code)
-		if previous, exists := messages[key]; exists {
-			result = fmt.Errorf("duplicate i18n key %s: first at %s:%d, again at %s:%d", key, previous.File, previous.Line, current.File, current.Line)
+		if _, exists := messages[key]; exists {
+			result = fmt.Errorf("duplicate i18n key: %s", key)
 			return false
 		}
 		messages[key] = current
