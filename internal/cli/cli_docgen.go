@@ -312,9 +312,8 @@ func runDocgen(routerDir, outputDir, configFile, workDir, format string) error {
 			continue
 		}
 
-		// 生成文件名：去掉路由源码文件的 cmd_ 前缀，保持文件名与命令语义一致。
-		baseName := strings.TrimSuffix(rf.FileName, ".go")
-		docName := strings.TrimPrefix(baseName, "cmd_")
+		// 生成文件名：直接使用扫描到的路由源码文件名，仅替换扩展名。
+		docName := strings.TrimSuffix(rf.FileName, ".go")
 		var docFileName string
 		var outputPath string
 		if format == "markdown" {
