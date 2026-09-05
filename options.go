@@ -52,7 +52,6 @@ func ConfigFile(file string) Option {
 
 		filename := filepath.Base(file)
 		config.ConfigName = strings.TrimSuffix(filename, fileType)
-		config.configFileExplicit = true
 
 		return nil
 	}
