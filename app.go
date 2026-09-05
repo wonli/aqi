@@ -33,8 +33,7 @@ type AppConfig struct {
 	Language string
 
 	//开发模式
-	devMode            bool
-	configFileExplicit bool
+	devMode bool
 
 	//服务名称，support.Version
 	//当指定 HttpServerPortFindPath 时，在配置读取之后从配置路径获取http端口
@@ -93,11 +92,11 @@ func Init(options ...Option) *AppConfig {
 		acf.ConfigPath = workerDir
 	}
 
-	// AQI_ENV only selects the default runtime configuration file. Business
-	// development mode is read from config.devMode after the file is loaded.
-	// Production is explicit; an unset or any other AQI_ENV uses development.
+	// AQI_ENV replaces the old CommitVersion-based environment detection.
+	// Production is explicit; an unset or any other value uses the development
+	// config variant by appending -dev to the configured filename.
 	isProduction := strings.EqualFold(strings.TrimSpace(os.Getenv("AQI_ENV")), "prod")
-	if !acf.configFileExplicit && !isProduction && !strings.Contains(acf.ConfigName, "-dev") {
+	if !isProduction && !strings.Contains(acf.ConfigName, "-dev") {
 		acf.ConfigName = fmt.Sprintf("%s-dev", acf.ConfigName)
 	}
 
