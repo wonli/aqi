@@ -33,7 +33,8 @@ type AppConfig struct {
 	Language string
 
 	//开发模式
-	devMode bool
+	devMode            bool
+	configFileExplicit bool
 
 	//服务名称，support.Version
 	//当指定 HttpServerPortFindPath 时，在配置读取之后从配置路径获取http端口
@@ -69,6 +70,7 @@ func Init(options ...Option) *AppConfig {
 		LogPathKey: "log",
 		DataPath:   "data",
 		Telemetry:  telemetry.NewNoopProvider(),
+		devMode:    true,
 	}
 
 	for _, opt := range options {
@@ -91,11 +93,18 @@ func Init(options ...Option) *AppConfig {
 		acf.ConfigPath = workerDir
 	}
 
-	if CommitVersion == "" {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("AQI_ENV")))
+	switch env {
+	case "prod", "production":
+		acf.devMode = false
+	case "dev", "development":
 		acf.devMode = true
-		if !strings.Contains(acf.ConfigName, "-dev") {
-			acf.ConfigName = fmt.Sprintf("%s-dev", acf.ConfigName)
-		}
+	}
+
+	// Only derive the default config filename. An explicitly supplied ConfigFile
+	// is always used exactly as requested.
+	if !acf.configFileExplicit && acf.devMode && !strings.Contains(acf.ConfigName, "-dev") {
+		acf.ConfigName = fmt.Sprintf("%s-dev", acf.ConfigName)
 	}
 
 	// 设置环境变量的前缀
@@ -136,10 +145,10 @@ func Init(options ...Option) *AppConfig {
 		os.Exit(1)
 	}
 
-	isSetDevMode := viper.IsSet("devMode")
-	if isSetDevMode {
-		setDevModel := viper.GetBool("devMode")
-		acf.devMode = setDevModel
+	// AQI_ENV has priority. When it is absent, keep config.devMode as the
+	// backwards-compatible override over the default development mode.
+	if env == "" && viper.IsSet("devMode") {
+		acf.devMode = viper.GetBool("devMode")
 	}
 
 	viper.Set("devMode", acf.devMode)
@@ -204,7 +213,7 @@ func Init(options ...Option) *AppConfig {
 	}
 
 	//初始化日志库
-	logger.Init(c)
+	logger.Init(c, acf.devMode)
 
 	//validate语言配置
 	validate.InitTranslator(acf.Language)
