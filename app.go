@@ -93,17 +93,11 @@ func Init(options ...Option) *AppConfig {
 		acf.ConfigPath = workerDir
 	}
 
-	env := strings.ToLower(strings.TrimSpace(os.Getenv("AQI_ENV")))
-	switch env {
-	case "prod", "production":
-		acf.devMode = false
-	case "dev", "development":
-		acf.devMode = true
-	}
-
-	// Only derive the default config filename. An explicitly supplied ConfigFile
-	// is always used exactly as requested.
-	if !acf.configFileExplicit && acf.devMode && !strings.Contains(acf.ConfigName, "-dev") {
+	// AQI_ENV only selects the default runtime configuration file. Business
+	// development mode is read from config.devMode after the file is loaded.
+	// Production is explicit; an unset or any other AQI_ENV uses development.
+	isProduction := strings.EqualFold(strings.TrimSpace(os.Getenv("AQI_ENV")), "prod")
+	if !acf.configFileExplicit && !isProduction && !strings.Contains(acf.ConfigName, "-dev") {
 		acf.ConfigName = fmt.Sprintf("%s-dev", acf.ConfigName)
 	}
 
@@ -145,9 +139,9 @@ func Init(options ...Option) *AppConfig {
 		os.Exit(1)
 	}
 
-	// AQI_ENV has priority. When it is absent, keep config.devMode as the
-	// backwards-compatible override over the default development mode.
-	if env == "" && viper.IsSet("devMode") {
+	// devMode is a business setting (sandbox payments, mocks, diagnostics, etc.)
+	// and is intentionally independent from AQI_ENV.
+	if viper.IsSet("devMode") {
 		acf.devMode = viper.GetBool("devMode")
 	}
 
