@@ -22,7 +22,7 @@ var RuntimeLog *zap.Logger
 var SugarLog *zap.SugaredLogger
 var fileBufferPool = buffer.NewPool()
 
-func Init(c config.Logger) {
+func Init(c config.Logger, devMode ...bool) {
 	if c.LogPath == "" {
 		c.LogPath = "."
 	}
@@ -77,7 +77,11 @@ func Init(c config.Logger) {
 	rFileLog := zapcore.NewCore(fileEncoder, zapcore.AddSync(&runtimeHook), zap.InfoLevel)
 
 	ZapLog = zap.New(zapcore.NewTee(stdLog, fileLog), zap.AddCaller())
-	FileLog = zap.New(zapcore.NewTee(fileLog), zap.AddCaller())
+	fileCores := []zapcore.Core{fileLog}
+	if len(devMode) > 0 && devMode[0] {
+		fileCores = append(fileCores, stdLog)
+	}
+	FileLog = zap.New(zapcore.NewTee(fileCores...), zap.AddCaller())
 	RuntimeLog = zap.New(zapcore.NewTee(rFileLog), zap.AddCaller())
 
 	//sugar
