@@ -44,10 +44,12 @@ func TestWriteDefaultConfigFileDoesNotOverwriteExistingFile(t *testing.T) {
 func TestWriteDefaultConfigFileCreatesMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	app := &AppConfig{
-		ConfigPath:     dir,
-		ConfigName:     "config",
-		ConfigType:     "yaml",
-		AppConfigBlock: "custom: true",
+		ConfigPath: dir,
+		ConfigName: "config",
+		ConfigType: "yaml",
+		DefaultConfigHook: func(c *ConfigBuilder) {
+			c.After("port", "custom", true)
+		},
 	}
 
 	filename, err := app.writeDefaultConfigFile()
@@ -63,7 +65,7 @@ func TestWriteDefaultConfigFileCreatesMissingFile(t *testing.T) {
 		t.Fatalf("failed to read config: %v", err)
 	}
 	if !strings.Contains(string(got), "custom: true") {
-		t.Fatalf("generated config missing app config block:\n%s", string(got))
+		t.Fatalf("generated config missing builder mutation:\n%s", string(got))
 	}
 }
 

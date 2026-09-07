@@ -30,9 +30,22 @@ func (a *AppConfig) WriteDefaultConfig() error {
 }
 
 func (a *AppConfig) writeDefaultConfigFile() (string, error) {
-	ctx, err := config.GetDefaultConfig(a.AppConfigBlock)
+	ctx, err := config.GetDefaultConfig()
 	if err != nil {
 		return "", err
+	}
+
+	if a.DefaultConfigHook != nil {
+		builder, err := config.NewBuilder([]byte(ctx))
+		if err != nil {
+			return "", err
+		}
+		a.DefaultConfigHook(builder)
+		data, err := builder.Bytes()
+		if err != nil {
+			return "", err
+		}
+		ctx = string(data)
 	}
 
 	filename := filepath.Join(a.ConfigPath, a.ConfigName+"."+a.ConfigType)

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	_ "embed"
 	"encoding/hex"
-	"strings"
 	"text/template"
 )
 
@@ -14,8 +13,7 @@ var defaultConfig []byte
 
 // DefaultConfigTpl store template data.
 type DefaultConfigTpl struct {
-	JwtSecurity    string
-	AppConfigBlock string
+	JwtSecurity string
 }
 
 func generateRandomHex(n int) (string, error) {
@@ -27,15 +25,14 @@ func generateRandomHex(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func GetDefaultConfig(appConfigBlock string) (string, error) {
+func GetDefaultConfig() (string, error) {
 	jwtSecurity, err := generateRandomHex(16)
 	if err != nil {
 		return "", err
 	}
 
 	config := DefaultConfigTpl{
-		JwtSecurity:    jwtSecurity,
-		AppConfigBlock: strings.TrimSpace(appConfigBlock),
+		JwtSecurity: jwtSecurity,
 	}
 
 	tmpl, err := template.New("config").Parse(string(defaultConfig))
@@ -44,8 +41,7 @@ func GetDefaultConfig(appConfigBlock string) (string, error) {
 	}
 
 	var renderedConfig bytes.Buffer
-	err = tmpl.Execute(&renderedConfig, config)
-	if err != nil {
+	if err = tmpl.Execute(&renderedConfig, config); err != nil {
 		return "", err
 	}
 

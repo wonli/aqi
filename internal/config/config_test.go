@@ -5,18 +5,16 @@ import (
 	"testing"
 )
 
-func TestGetDefaultConfig_InsertsAppConfigBlockBeforeLog(t *testing.T) {
-	content, err := GetDefaultConfig("theme: theme/default\nrouteSuffix: \"\"")
+func TestGetDefaultConfig(t *testing.T) {
+	content, err := GetDefaultConfig()
 	if err != nil {
 		t.Fatalf("GetDefaultConfig returned error: %v", err)
 	}
 
-	themeIndex := strings.Index(content, "theme: theme/default")
-	logIndex := strings.Index(content, "\nlog:\n")
-	if themeIndex < 0 || logIndex < 0 {
-		t.Fatalf("config content missing expected sections:\n%s", content)
+	if !strings.Contains(content, "jwtSecurity:") {
+		t.Fatalf("config content missing jwtSecurity:\n%s", content)
 	}
-	if themeIndex > logIndex {
-		t.Fatalf("app config block should appear before log block:\n%s", content)
+	if !strings.Contains(content, "\nlog:\n") {
+		t.Fatalf("config content missing log block:\n%s", content)
 	}
 }

@@ -47,7 +47,7 @@ type AppConfig struct {
 
 	Configs map[string]any
 
-	AppConfigBlock string
+	DefaultConfigHook func(*ConfigBuilder)
 
 	Guard      ws.GuardFunc //守护回调
 	HttpServer http.Handler //http server

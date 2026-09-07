@@ -6,11 +6,23 @@ import (
 	"path/filepath"
 	"strings"
 
+	internalconfig "github.com/wonli/aqi/internal/config"
 	"github.com/wonli/aqi/telemetry"
 	"github.com/wonli/aqi/ws"
 )
 
 type Option func(config *AppConfig) error
+
+// ConfigBuilder is used to modify the generated default config before it is written.
+type ConfigBuilder = internalconfig.Builder
+
+// DefaultConfig registers a hook that can modify AQI's default config before it is written.
+func DefaultConfig(hook func(*ConfigBuilder)) Option {
+	return func(config *AppConfig) error {
+		config.DefaultConfigHook = hook
+		return nil
+	}
+}
 
 func LogConfig(configKeyPath string) Option {
 	return func(config *AppConfig) error {
@@ -22,13 +34,6 @@ func LogConfig(configKeyPath string) Option {
 func DataPath(path string) Option {
 	return func(config *AppConfig) error {
 		config.DataPath = path
-		return nil
-	}
-}
-
-func AppConfigBlock(block string) Option {
-	return func(config *AppConfig) error {
-		config.AppConfigBlock = strings.TrimSpace(block)
 		return nil
 	}
 }
