@@ -26,12 +26,19 @@ func (a *Topic) RemoveSubUser(suid string) {
     a.SubUsers.Delete(suid)
 }
 
-func (a *Topic) SendToSubUser(msg []byte) {
+func (a *Topic) SendToSubUser(msg *TopicMsg) {
+	var data []byte
 	a.SubUsers.Range(func(key, value any) bool {
 		uniqueId := key.(string)
 		user := Hub.User(uniqueId)
 		if user != nil {
-			user.SendMsg(msg)
+			if data == nil {
+				data = msg.encode()
+				if data == nil {
+					return false
+				}
+			}
+			user.SendMsg(data)
 		}
 
 		return true

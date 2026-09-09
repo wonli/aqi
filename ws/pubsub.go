@@ -31,19 +31,10 @@ func (a *PubSub) initTopic(topicId string) *Topic {
 }
 
 func (a *PubSub) topicMsg(topicId string, data any) *TopicMsg {
-	msg := Action{
-		Action: topicId,
-		Data: H{
-			"topicId": topicId,
-			"message": data,
-		},
-	}
-
 	a.initTopic(topicId)
 	return &TopicMsg{
 		Ori:     data,
 		TopicId: topicId,
-		Msg:     msg.Encode(),
 	}
 }
 
@@ -90,6 +81,6 @@ func (a *PubSub) Start() {
 		t.(*Topic).ApplyFunc(msg)
 
 		//订阅消息的用户处理
-		t.(*Topic).SendToSubUser(msg.Msg)
+		t.(*Topic).SendToSubUser(msg)
 	}
 }
