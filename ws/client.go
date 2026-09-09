@@ -23,7 +23,7 @@ var errPeerClose = errors.New("peer requested websocket close")
 type Client struct {
 	Hub            *Hubc
 	Conn           net.Conn
-	Send           chan Message
+	Send           chan []byte
 	Endpoint       string    //入口地址
 	OnceId         string    //临时ID，扫码登录等场景作为客户端唯一标识
 	ClientId       string    //客户端ID
@@ -40,10 +40,11 @@ type Client struct {
 	Limiter      *rate.Limiter //限速器
 	RequestQueue chan string   //处理队列
 
-	HttpRequest *http.Request
-	HttpWriter  http.ResponseWriter
-	ctx         context.Context
-	cancel      context.CancelFunc
+	HttpRequest  *http.Request
+	HttpWriter   http.ResponseWriter
+	ctx          context.Context
+	cancel       context.CancelFunc
+	controlQueue chan frame
 
 	User              *User     //关联用户
 	Scope             string    //登录jwt scope, 用于判断用户从哪里登录的
@@ -81,6 +82,9 @@ func (c *Client) initContext(parent context.Context) {
 		parent = context.Background()
 	}
 	c.ctx, c.cancel = context.WithCancel(context.WithoutCancel(parent))
+	if c.controlQueue == nil {
+		c.controlQueue = make(chan frame, 8)
+	}
 }
 
 // Context returns the context associated with the WebSocket connection.
@@ -169,7 +173,7 @@ func (c *Client) Disconnect() {
 func (c *Client) handleControlFrame(op ws.OpCode, payload []byte) error {
 	switch op {
 	case ws.OpPing:
-		return c.sendControlMessage(Message{Op: ws.OpPong, Data: payload})
+		return c.sendControlFrame(frame{op: ws.OpPong, data: payload})
 
 	case ws.OpPong:
 		c.SetLastHeartbeat(time.Now())
@@ -184,7 +188,7 @@ func (c *Client) handleControlFrame(op ws.OpCode, payload []byte) error {
 			}
 		}
 
-		if err := c.sendControlMessage(Message{Op: ws.OpClose, Data: response}); err != nil {
+		if err := c.sendControlFrame(frame{op: ws.OpClose, data: response}); err != nil {
 			return err
 		}
 		return errPeerClose
@@ -245,7 +249,6 @@ func (c *Client) Reader() {
 			if err := c.handleControlFrame(hdr.OpCode, payload); err != nil {
 				if errors.Is(err, errPeerClose) {
 					writerOwnsDisconnect = true
-					return
 				}
 				return
 			}
@@ -298,14 +301,14 @@ func (c *Client) Request() {
 	}
 }
 
-func (c *Client) writeMessage(msg Message) error {
-	if err := wsutil.WriteServerMessage(c.Conn, msg.Op, msg.Data); err != nil {
+func (c *Client) writeFrame(f frame) error {
+	if err := wsutil.WriteServerMessage(c.Conn, f.op, f.data); err != nil {
 		c.Log("xx", "Send msg error", err.Error())
 		return err
 	}
 
-	if msg.Op == ws.OpText {
-		c.Log("->", string(msg.Data))
+	if f.op == ws.OpText {
+		c.Log("->", string(f.data))
 	}
 
 	return nil
@@ -324,12 +327,8 @@ func (c *Client) Write() {
 		case <-c.Context().Done():
 			return
 
-		case msg := <-c.Send:
-			if err := c.writeMessage(msg); err != nil {
-				return
-			}
-
-			if msg.Op == ws.OpClose {
+		case data := <-c.Send:
+			if err := c.writeFrame(frame{op: ws.OpText, data: data}); err != nil {
 				return
 			}
 
@@ -339,8 +338,17 @@ func (c *Client) Write() {
 				return
 			}
 
+		case f := <-c.controlQueue:
+			if err := c.writeFrame(f); err != nil {
+				return
+			}
+
+			if f.op == ws.OpClose {
+				return
+			}
+
 		case <-timer.C:
-			if err := c.writeMessage(Message{Op: ws.OpPing, Data: []byte("ping")}); err != nil {
+			if err := c.writeFrame(frame{op: ws.OpPing, data: []byte("ping")}); err != nil {
 				return
 			}
 		}
@@ -372,30 +380,29 @@ func (c *Client) Log(symbol string, msg ...string) {
 	c.mu.Unlock()
 }
 
-// sendControlMessage queues a control frame and waits for queue capacity.
+// sendControlFrame queues a control frame and waits for queue capacity.
 // Control frames must not be silently dropped when the regular send queue is full.
-func (c *Client) sendControlMessage(msg Message) error {
+func (c *Client) sendControlFrame(f frame) error {
+	if c.controlQueue == nil {
+		return errors.New("websocket control queue is not initialized")
+	}
+
 	select {
 	case <-c.Context().Done():
 		return c.Context().Err()
-	case c.Send <- msg:
+	case c.controlQueue <- f:
 		return nil
 	}
 }
 
-// SendMessage queues an outbound WebSocket frame without blocking.
-func (c *Client) SendMessage(msg Message) {
+// SendMsg 把文本消息加入发送队列
+func (c *Client) SendMsg(msg []byte) {
 	select {
 	case <-c.Context().Done():
 		return
 	case c.Send <- msg:
 	default:
 	}
-}
-
-// SendMsg 把文本消息加入发送队列
-func (c *Client) SendMsg(msg []byte) {
-	c.SendMessage(Message{Op: ws.OpText, Data: msg})
 }
 
 // SendActionMsg 构造消息再发送
@@ -426,8 +433,4 @@ func (c *Client) GetRecentLogs() []string {
 	}
 
 	return res
-}
-
-func (c *Client) MarshalJSON() ([]byte, error) {
-	return []byte("{}"), nil
 }

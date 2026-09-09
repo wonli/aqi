@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	gobwasws "github.com/gobwas/ws"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wonli/aqi/telemetry"
@@ -77,7 +76,7 @@ func TestTelemetryObserveRecordsFields(t *testing.T) {
 		a.SendOk()
 	})
 
-	client := &ws.Client{ClientId: "client-1", AppId: "app", Platform: "ios", Send: make(chan ws.Message, 1)}
+	client := &ws.Client{ClientId: "client-1", AppId: "app", Platform: "ios", Send: make(chan []byte, 1)}
 	ws.Dispatcher(client, fmt.Sprintf(`{"id":"req-1","action":%q,"params":"{}"}`, action))
 
 	require.Equal(t, action, provider.name)
@@ -102,7 +101,7 @@ func TestRecoveryRecordsPanicOnSpan(t *testing.T) {
 	router := ws.NewRouter().Use(Telemetry(), Recovery())
 	router.Add(action, func(a *ws.Context) { panic("boom") })
 
-	client := &ws.Client{Send: make(chan ws.Message, 1)}
+	client := &ws.Client{Send: make(chan []byte, 1)}
 	ws.Dispatcher(client, fmt.Sprintf(`{"id":"req-2","action":%q,"params":"{}"}`, action))
 
 	require.Equal(t, telemetry.StatusError, provider.span.status)
@@ -127,7 +126,7 @@ func TestRecoveryStopsHandlersAfterPanicAndQueuesErrorResponse(t *testing.T) {
 		func(a *ws.Context) { afterPanicCalled = true },
 	)
 
-	client := &ws.Client{Send: make(chan ws.Message, 2)}
+	client := &ws.Client{Send: make(chan []byte, 2)}
 	ws.Dispatcher(client, fmt.Sprintf(`{"id":"req-3","action":%q,"params":"{}"}`, action))
 
 	require.False(t, afterPanicCalled, "handlers after a recovered panic must not run")
@@ -136,9 +135,8 @@ func TestRecoveryStopsHandlersAfterPanicAndQueuesErrorResponse(t *testing.T) {
 	require.Contains(t, provider.span.errors, "panic: stop here")
 	select {
 	case msg := <-client.Send:
-		require.Equal(t, gobwasws.OpText, msg.Op)
-		require.Contains(t, string(msg.Data), `"code":-30`)
-		require.Contains(t, string(msg.Data), "服务维护中")
+		require.Contains(t, string(msg), `"code":-30`)
+		require.Contains(t, string(msg), "服务维护中")
 	default:
 		t.Fatal("recovery did not queue an error response")
 	}
@@ -154,14 +152,13 @@ func TestRecoveryPassesThroughWithoutPanic(t *testing.T) {
 		a.SendOk()
 	})
 
-	client := &ws.Client{Send: make(chan ws.Message, 1)}
+	client := &ws.Client{Send: make(chan []byte, 1)}
 	ws.Dispatcher(client, fmt.Sprintf(`{"id":"req-4","action":%q,"params":"{}"}`, action))
 
 	require.True(t, called)
 	select {
 	case msg := <-client.Send:
-		require.Equal(t, gobwasws.OpText, msg.Op)
-		require.Contains(t, string(msg.Data), `"code":0`)
+		require.Contains(t, string(msg), `"code":0`)
 	default:
 		t.Fatal("downstream handler did not queue its response")
 	}
