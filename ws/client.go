@@ -21,27 +21,27 @@ import (
 var errPeerClose = errors.New("peer requested websocket close")
 
 type Client struct {
-	Hub            *Hubc
-	Conn           net.Conn
-	Send           chan []byte
-	Endpoint       string    //入口地址
-	OnceId         string    //临时ID，扫码登录等场景作为客户端唯一标识
-	ClientId       string    //客户端ID
-	Disconnecting  bool      //已被设置为断开状态（消息发送完之后断开连接）
-	SyncMsg        bool      //是否接收消息
-	LastMsgId      int       //最后一条消息ID
-	RequiredValid  bool      //人机验证标识
-	Validated      bool      //是否已验证
-	ValidExpiry    time.Time //验证有效期
-	ValidCacheData any       //验证相关缓存数据
-	AuthCode       string    //用于校验JWT中的code，如果相等识别为同一个用户的网络地址变更
-	ErrorCount     int       //错误次数
+	Hub            *Hubc               `json:"-"`
+	Conn           net.Conn            `json:"-"`
+	Send           chan []byte         `json:"-"`
+	Endpoint       string              //入口地址
+	OnceId         string              //临时ID，扫码登录等场景作为客户端唯一标识
+	ClientId       string              //客户端ID
+	Disconnecting  bool                //已被设置为断开状态（消息发送完之后断开连接）
+	SyncMsg        bool                //是否接收消息
+	LastMsgId      int                 //最后一条消息ID
+	RequiredValid  bool                //人机验证标识
+	Validated      bool                //是否已验证
+	ValidExpiry    time.Time           //验证有效期
+	ValidCacheData any                 `json:"-"` //验证相关缓存数据
+	AuthCode       string              //用于校验JWT中的code，如果相等识别为同一个用户的网络地址变更
+	ErrorCount     int                 //错误次数
 
-	Limiter      *rate.Limiter //限速器
-	RequestQueue chan string   //处理队列
+	Limiter      *rate.Limiter `json:"-"` //限速器
+	RequestQueue chan string   `json:"-"` //处理队列
 
-	HttpRequest  *http.Request
-	HttpWriter   http.ResponseWriter
+	HttpRequest  *http.Request       `json:"-"`
+	HttpWriter   http.ResponseWriter `json:"-"`
 	ctx          context.Context
 	cancel       context.CancelFunc
 	controlQueue chan frame
@@ -65,7 +65,7 @@ type Client struct {
 	disconnectOnce sync.Once
 	stateMu        sync.RWMutex
 	mu             sync.RWMutex
-	Keys           map[string]any
+	Keys           map[string]any `json:"-"`
 
 	// recent logs ring buffer (last 100 items)
 	recentLogs  [100]string
