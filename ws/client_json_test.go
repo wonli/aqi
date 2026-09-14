@@ -10,7 +10,7 @@ func TestClientJSONExcludesRuntimeState(t *testing.T) {
 	client := &Client{
 		ClientId:       "client-1",
 		Send:           make(chan []byte),
-		RequestQueue:   make(chan string),
+		RequestQueue:   make(chan *Request),
 		ValidCacheData: func() {},
 		Keys:           map[string]any{"bad": func() {}},
 	}

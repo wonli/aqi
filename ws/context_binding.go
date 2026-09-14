@@ -6,6 +6,20 @@ import (
 	"github.com/wonli/aqi/validate"
 )
 
+func (c *Context) Bind(s any) error {
+	coder := defaultJSONCoder
+	params := []byte(c.Params)
+
+	if c.request != nil {
+		params = c.request.Params
+	}
+	if c.route != nil && c.route.coder != nil {
+		coder = c.route.coder
+	}
+
+	return coder.Bind(params, s)
+}
+
 func (c *Context) BindingJson(s any) error {
 	err := json.Unmarshal([]byte(c.Params), s)
 	if err != nil {

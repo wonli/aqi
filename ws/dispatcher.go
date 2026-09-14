@@ -1,23 +1,8 @@
 package ws
 
-import (
-	"time"
+import "time"
 
-	"github.com/tidwall/gjson"
-)
-
-func Dispatcher(c *Client, request string) {
-	var req struct {
-		Id     string `json:"id"`
-		Action string `json:"action"`
-		Params string `json:"params"`
-	}
-
-	result := gjson.Parse(request)
-	req.Id = result.Get("id").String()
-	req.Params = result.Get("params").String()
-	req.Action = result.Get("action").String()
-
+func dispatcher(c *Client, req *Request) {
 	t := time.Now()
 	if req.Action == "ping" {
 		c.SetLastHeartbeat(t)
@@ -36,8 +21,8 @@ func Dispatcher(c *Client, request string) {
 
 	c.TouchRequest(t)
 
-	handlers := InitManager().Handlers(req.Action)
-	if len(handlers) == 0 {
+	r := InitManager().route(req.Action)
+	if r == nil || len(r.handlers) == 0 {
 		c.SendActionMsg(&Action{Action: req.Action, Code: -1005, Msg: "request not supported"})
 		return
 	}
@@ -53,13 +38,16 @@ func Dispatcher(c *Client, request string) {
 
 	ctx := &Context{
 		Id:     req.Id,
-		Params: req.Params,
+		Params: string(req.Params),
 		Action: req.Action,
 
 		Client: c,
 		Server: wss,
 
-		handlers: handlers,
+		request: req,
+		route:   r,
+
+		handlers: r.handlers,
 		ctx:      c.Context(),
 
 		language:   language,

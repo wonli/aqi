@@ -44,7 +44,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 		Hub:            Hub,
 		Conn:           conn,
 		Send:           make(chan []byte, 32),
-		RequestQueue:   make(chan string, 128),
+		RequestQueue:   make(chan *Request, 128),
 		Limiter:        rate.NewLimiter(50, 100),
 		IpAddress:      ipAddr,
 		IpAddressPort:  fmt.Sprintf("%s:%d", ipAddr, addr.Port),

@@ -1,8 +1,6 @@
 package ws
 
-import (
-	"strings"
-)
+import "strings"
 
 type HandlerFunc func(a *Context)
 type HandlersChain []HandlerFunc
@@ -10,6 +8,7 @@ type HandlersChain []HandlerFunc
 type IRouter interface {
 	Use(middleware ...HandlerFunc) IRouter
 	Group(name string) IRouter
+	Coder(coder Coder) IRouter
 	Add(name string, fn ...HandlerFunc)
 }
 
@@ -17,6 +16,7 @@ type Routers struct {
 	manager        *ActionManager
 	handlerMembers HandlersChain
 	groups         []string
+	coder          Coder
 }
 
 func NewRouter() Routers {
@@ -30,15 +30,14 @@ func (r Routers) Add(name string, fn ...HandlerFunc) {
 		name = strings.Join(r.groups, ".") + "." + name
 	}
 
-	has := r.manager.Has(name)
-	if has {
+	if r.manager.Has(name) {
 		panic("Duplicate route: " + name)
 	}
 
 	chains := make(HandlersChain, len(r.handlerMembers), len(r.handlerMembers)+len(fn))
 	copy(chains, r.handlerMembers)
 
-	r.manager.Add(name, append(chains, fn...))
+	r.manager.add(name, append(chains, fn...), r.coder)
 }
 
 func (r Routers) Use(middleware ...HandlerFunc) IRouter {
@@ -48,5 +47,11 @@ func (r Routers) Use(middleware ...HandlerFunc) IRouter {
 
 func (r Routers) Group(name string) IRouter {
 	r.groups = append(r.groups, name)
+	return r
+}
+
+func (r Routers) Coder(coder Coder) IRouter {
+	r.manager.registerCoder(coder)
+	r.coder = coder
 	return r
 }

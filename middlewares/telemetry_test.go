@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 
 	"github.com/wonli/aqi/telemetry"
 	"github.com/wonli/aqi/ws"
@@ -77,7 +78,7 @@ func TestTelemetryObserveRecordsFields(t *testing.T) {
 	})
 
 	client := &ws.Client{ClientId: "client-1", AppId: "app", Platform: "ios", Send: make(chan []byte, 1)}
-	ws.Dispatcher(client, fmt.Sprintf(`{"id":"req-1","action":%q,"params":"{}"}`, action))
+	dispatchMiddlewareTestRequest(client, "req-1", action)
 
 	require.Equal(t, action, provider.name)
 	require.Equal(t, action, provider.span.fields["action"])
@@ -102,7 +103,7 @@ func TestRecoveryRecordsPanicOnSpan(t *testing.T) {
 	router.Add(action, func(a *ws.Context) { panic("boom") })
 
 	client := &ws.Client{Send: make(chan []byte, 1)}
-	ws.Dispatcher(client, fmt.Sprintf(`{"id":"req-2","action":%q,"params":"{}"}`, action))
+	dispatchMiddlewareTestRequest(client, "req-2", action)
 
 	require.Equal(t, telemetry.StatusError, provider.span.status)
 	require.Equal(t, "服务维护中", provider.span.fields["response_message"])
@@ -127,7 +128,7 @@ func TestRecoveryStopsHandlersAfterPanicAndQueuesErrorResponse(t *testing.T) {
 	)
 
 	client := &ws.Client{Send: make(chan []byte, 2)}
-	ws.Dispatcher(client, fmt.Sprintf(`{"id":"req-3","action":%q,"params":"{}"}`, action))
+	dispatchMiddlewareTestRequest(client, "req-3", action)
 
 	require.False(t, afterPanicCalled, "handlers after a recovered panic must not run")
 	require.NotNil(t, provider.span)
@@ -153,7 +154,7 @@ func TestRecoveryPassesThroughWithoutPanic(t *testing.T) {
 	})
 
 	client := &ws.Client{Send: make(chan []byte, 1)}
-	ws.Dispatcher(client, fmt.Sprintf(`{"id":"req-4","action":%q,"params":"{}"}`, action))
+	dispatchMiddlewareTestRequest(client, "req-4", action)
 
 	require.True(t, called)
 	select {
@@ -172,6 +173,14 @@ func TestSpanFromContextFallsBackToNoop(t *testing.T) {
 		span.SetStatus(telemetry.StatusError, "bad")
 		span.End()
 	})
+}
+
+func dispatchMiddlewareTestRequest(client *ws.Client, id, action string) {
+	client.RequestQueue = make(chan *ws.Request, 1)
+	client.Limiter = rate.NewLimiter(rate.Inf, 1)
+	client.RequestQueue <- &ws.Request{Id: id, Action: action, Params: []byte(`{}`)}
+	close(client.RequestQueue)
+	client.Request()
 }
 
 func middlewareTestAction(prefix string) string {

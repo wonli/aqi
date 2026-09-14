@@ -47,8 +47,8 @@ func TestClientConcurrentConnectionWriteProbe(t *testing.T) {
 
 	client := &Client{
 		Conn:         probeConn,
-		Send:         make(chan Message, 128),
-		RequestQueue: make(chan string, 1),
+		Send:         make(chan []byte, 128),
+		RequestQueue: make(chan *Request, 1),
 	}
 	client.initContext(context.Background())
 
@@ -82,12 +82,13 @@ func TestClientConcurrentConnectionWriteProbe(t *testing.T) {
 
 	for i := 0; i < 200 && time.Now().Before(deadline); i++ {
 		client.SendMsg(payload)
+		client.SendBinary(payload)
 		if err := wsutil.WriteClientMessage(peerConn, ws.OpPing, nil); err != nil {
 			break
 		}
 	}
 
-	// Let queued Text/Pong frames drain through the single writer.
+	// Let queued Text/Binary/Pong frames drain through the single writer.
 	time.Sleep(50 * time.Millisecond)
 
 	_ = peerConn.Close()
