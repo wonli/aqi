@@ -16,6 +16,7 @@ type Server struct {
 	isDev           bool
 	dataPath        string
 	defaultLanguage string
+	maxFrameSize    int64
 	i18n             *i18n.Manager
 }
 
@@ -57,6 +58,10 @@ func (s *Server) SetLanguage(language string) {
 	if language != "" {
 		s.defaultLanguage = language
 	}
+}
+
+func (s *Server) SetMaxFrameSize(size int64) {
+	s.maxFrameSize = size
 }
 
 func (s *Server) DefaultLanguage() string {

@@ -210,7 +210,9 @@ func (c *Client) Reader() {
 
 	reader := wsutil.NewReader(c.Conn, ws.StateServerSide)
 	reader.CheckUTF8 = true
-	reader.MaxFrameSize = maxFrameSize
+	if wss != nil {
+		reader.MaxFrameSize = wss.maxFrameSize
+	}
 	reader.OnIntermediate = func(hdr ws.Header, src io.Reader) error {
 		payload, err := io.ReadAll(src)
 		if err != nil {

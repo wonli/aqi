@@ -102,7 +102,7 @@ func Guard(fn ws.GuardFunc) Option {
 // Zero keeps gobwas's default unlimited behavior.
 func WebSocketMaxFrameSize(size int64) Option {
 	return func(config *AppConfig) error {
-		ws.SetMaxFrameSize(size)
+		config.WebSocketMaxFrameSize = size
 		return nil
 	}
 }

@@ -24,6 +24,7 @@ func (a *AppConfig) Start() {
 		server.SetDataPath(a.DataPath)
 		server.SetIsDev(a.devMode)
 		server.SetLanguage(a.Language)
+		server.SetMaxFrameSize(a.WebSocketMaxFrameSize)
 		server.Init()
 	}
 

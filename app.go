@@ -49,9 +49,10 @@ type AppConfig struct {
 
 	DefaultConfigHook func(*ConfigBuilder)
 
-	Guard      ws.GuardFunc //守护回调
-	HttpServer http.Handler //http server
-	Telemetry  telemetry.Provider
+	Guard                 ws.GuardFunc //守护回调
+	HttpServer            http.Handler //http server
+	WebSocketMaxFrameSize int64
+	Telemetry             telemetry.Provider
 
 	RemoteProvider *RemoteProvider //远程配置支持etcd, consul
 
