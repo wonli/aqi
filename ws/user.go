@@ -231,3 +231,29 @@ func (u *User) SendMsgToApp(appId string, msg []byte) {
 		client.SendMsg(msg)
 	}
 }
+
+func (u *User) sendAction(action *Action) {
+	if u == nil {
+		return
+	}
+
+	f, err := actionFrame(action)
+	if err != nil {
+		return
+	}
+
+	u.RLock()
+	clients := append([]*Client(nil), u.AppClients...)
+	u.RUnlock()
+
+	for _, client := range clients {
+		client.sendFrame(f)
+	}
+}
+
+func (u *User) sendActionToApp(appId string, action *Action) {
+	client := u.AppClient(appId)
+	if client != nil {
+		client.SendActionMsg(action)
+	}
+}

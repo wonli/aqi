@@ -98,6 +98,14 @@ func Guard(fn ws.GuardFunc) Option {
 	}
 }
 
+// WebSocketMaxMessageSize overrides the default 3 MiB inbound WebSocket
+// application message limit. Configure it during startup.
+func WebSocketMaxMessageSize(size int64) Option {
+	return func(config *AppConfig) error {
+		return ws.SetMaxMessageSize(size)
+	}
+}
+
 func Telemetry(provider telemetry.Provider) Option {
 	return func(config *AppConfig) error {
 		config.Telemetry = provider
