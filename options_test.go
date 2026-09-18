@@ -2,8 +2,8 @@ package aqi
 
 import "testing"
 
-func TestWebSocketMaxMessageSizeOptionRejectsNonPositiveValues(t *testing.T) {
-	if err := WebSocketMaxMessageSize(0)(&AppConfig{}); err == nil {
-		t.Fatal("expected non-positive websocket max message size to be rejected")
+func TestWebSocketMaxFrameSizeOptionAllowsGobwasDefault(t *testing.T) {
+	if err := WebSocketMaxFrameSize(0)(&AppConfig{}); err != nil {
+		t.Fatalf("expected zero to keep gobwas unlimited behavior: %v", err)
 	}
 }
