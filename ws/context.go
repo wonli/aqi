@@ -14,6 +14,9 @@ type Context struct {
 	Response *Action
 	Server   *Server
 
+	request *Request
+	route   *route
+
 	index    int8
 	handlers HandlersChain
 

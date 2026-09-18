@@ -38,13 +38,13 @@ type Client struct {
 	ErrorCount     int                 //错误次数
 
 	Limiter      *rate.Limiter `json:"-"` //限速器
-	RequestQueue chan string   `json:"-"` //处理队列
+	RequestQueue chan *Request `json:"-"` //处理队列
 
-	HttpRequest  *http.Request       `json:"-"`
-	HttpWriter   http.ResponseWriter `json:"-"`
-	ctx          context.Context
-	cancel       context.CancelFunc
-	controlQueue chan frame
+	HttpRequest *http.Request       `json:"-"`
+	HttpWriter  http.ResponseWriter `json:"-"`
+	ctx         context.Context
+	cancel      context.CancelFunc
+	frameQueue  chan frame
 
 	User              *User     //关联用户
 	Scope             string    //登录jwt scope, 用于判断用户从哪里登录的
@@ -82,8 +82,8 @@ func (c *Client) initContext(parent context.Context) {
 		parent = context.Background()
 	}
 	c.ctx, c.cancel = context.WithCancel(context.WithoutCancel(parent))
-	if c.controlQueue == nil {
-		c.controlQueue = make(chan frame, 8)
+	if c.frameQueue == nil {
+		c.frameQueue = make(chan frame, 8)
 	}
 }
 
@@ -210,6 +210,9 @@ func (c *Client) Reader() {
 
 	reader := wsutil.NewReader(c.Conn, ws.StateServerSide)
 	reader.CheckUTF8 = true
+	if wss != nil {
+		reader.MaxFrameSize = wss.maxFrameSize
+	}
 	reader.OnIntermediate = func(hdr ws.Header, src io.Reader) error {
 		payload, err := io.ReadAll(src)
 		if err != nil {
@@ -255,21 +258,40 @@ func (c *Client) Reader() {
 			continue
 		}
 
+		var req *Request
 		switch hdr.OpCode {
 		case ws.OpText:
-			req := string(payload)
-			c.Log("<-", req)
-			select {
-			case c.RequestQueue <- req:
-			case <-c.Context().Done():
-				return
-			}
+			c.Log("<-", string(payload))
+			req, err = decodeRequest(payload, defaultJSONCoder)
 
 		case ws.OpBinary:
-			c.Log("xx", "Unrecognized binary message")
+			coder := InitManager().Coder()
+			if coder == nil {
+				c.Log("xx", "Unrecognized binary message")
+				continue
+			}
+			req, err = decodeRequest(payload, coder)
+			if err == nil {
+				c.Log("<-", "binary", req.Action)
+			}
 
 		default:
 			c.Log("xx", "Unrecognized action")
+			continue
+		}
+
+		if err == nil {
+			err = validateRequestFrame(hdr.OpCode, req)
+		}
+		if err != nil {
+			c.Log("xx", "Decode websocket message failed", err.Error())
+			continue
+		}
+
+		select {
+		case c.RequestQueue <- req:
+		case <-c.Context().Done():
+			return
 		}
 	}
 }
@@ -296,7 +318,7 @@ func (c *Client) Request() {
 				continue
 			}
 
-			Dispatcher(c, req)
+			dispatcher(c, req)
 		}
 	}
 }
@@ -338,7 +360,7 @@ func (c *Client) Write() {
 				return
 			}
 
-		case f := <-c.controlQueue:
+		case f := <-c.frameQueue:
 			if err := c.writeFrame(f); err != nil {
 				return
 			}
@@ -383,15 +405,29 @@ func (c *Client) Log(symbol string, msg ...string) {
 // sendControlFrame queues a control frame and waits for queue capacity.
 // Control frames must not be silently dropped when the regular send queue is full.
 func (c *Client) sendControlFrame(f frame) error {
-	if c.controlQueue == nil {
-		return errors.New("websocket control queue is not initialized")
+	if c.frameQueue == nil {
+		return errors.New("websocket frame queue is not initialized")
 	}
 
 	select {
 	case <-c.Context().Done():
 		return c.Context().Err()
-	case c.controlQueue <- f:
+	case c.frameQueue <- f:
 		return nil
+	}
+}
+
+func (c *Client) sendFrame(f frame) {
+	if f.op == ws.OpText {
+		c.SendMsg(f.data)
+		return
+	}
+
+	select {
+	case <-c.Context().Done():
+		return
+	case c.frameQueue <- f:
+	default:
 	}
 }
 
@@ -405,9 +441,14 @@ func (c *Client) SendMsg(msg []byte) {
 	}
 }
 
-// SendActionMsg 构造消息再发送
-func (c *Client) SendActionMsg(a *Action) {
-	c.SendMsg(a.Encode())
+// SendActionMsg 根据 Action 所属路由编码并发送消息
+func (c *Client) SendActionMsg(action *Action) {
+	f, err := actionFrame(action)
+	if err != nil {
+		c.Log("xx", "Encode websocket message failed", err.Error())
+		return
+	}
+	c.sendFrame(f)
 }
 
 // Close 关闭客户端

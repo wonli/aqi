@@ -98,6 +98,15 @@ func Guard(fn ws.GuardFunc) Option {
 	}
 }
 
+// WebSocketMaxFrameSize configures gobwas/ws Reader.MaxFrameSize.
+// Zero keeps gobwas's default unlimited behavior.
+func WebSocketMaxFrameSize(size int64) Option {
+	return func(config *AppConfig) error {
+		config.WebSocketMaxFrameSize = size
+		return nil
+	}
+}
+
 func Telemetry(provider telemetry.Provider) Option {
 	return func(config *AppConfig) error {
 		config.Telemetry = provider

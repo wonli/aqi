@@ -148,6 +148,20 @@ func (h *Hubc) Broadcast(msg []byte) {
 	}
 }
 
+func (h *Hubc) broadcastAction(action *Action) {
+	f, err := actionFrame(action)
+	if err != nil {
+		return
+	}
+
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
+
+	for client := range h.Clients {
+		client.sendFrame(f)
+	}
+}
+
 func (h *Hubc) User(uid string) *User {
 	user, ok := h.Users.Load(uid)
 	if ok {
