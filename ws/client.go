@@ -210,6 +210,7 @@ func (c *Client) Reader() {
 
 	reader := wsutil.NewReader(c.Conn, ws.StateServerSide)
 	reader.CheckUTF8 = true
+	reader.MaxFrameSize = maxFrameSize
 	reader.OnIntermediate = func(hdr ws.Header, src io.Reader) error {
 		payload, err := io.ReadAll(src)
 		if err != nil {
@@ -232,18 +233,8 @@ func (c *Client) Reader() {
 			return
 		}
 
-		payload, err := readMessagePayload(reader)
+		payload, err := io.ReadAll(reader)
 		if err != nil {
-			if errors.Is(err, errMessageTooBig) {
-				c.Log("xx", err.Error())
-				if closeErr := c.sendControlFrame(frame{
-					op:   ws.OpClose,
-					data: ws.NewCloseFrameBody(ws.StatusMessageTooBig, "message too big"),
-				}); closeErr == nil {
-					writerOwnsDisconnect = true
-				}
-				return
-			}
 			if errors.Is(err, errPeerClose) {
 				writerOwnsDisconnect = true
 				return
