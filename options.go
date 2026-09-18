@@ -98,11 +98,12 @@ func Guard(fn ws.GuardFunc) Option {
 	}
 }
 
-// WebSocketMaxMessageSize overrides the default 3 MiB inbound WebSocket
-// application message limit. Configure it during startup.
-func WebSocketMaxMessageSize(size int64) Option {
+// WebSocketMaxFrameSize configures gobwas/ws Reader.MaxFrameSize.
+// Zero keeps gobwas's default unlimited behavior.
+func WebSocketMaxFrameSize(size int64) Option {
 	return func(config *AppConfig) error {
-		return ws.SetMaxMessageSize(size)
+		ws.SetMaxFrameSize(size)
+		return nil
 	}
 }
 
