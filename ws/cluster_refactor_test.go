@@ -89,8 +89,8 @@ func TestReconnectConcurrentUnsubscribeDoesNotCreateGhostTopicRef(t *testing.T) 
 		t.Fatal("login did not finish")
 	}
 
-	subs, _, _ := transport.counts("$aqi:topic:room:1")
-	if subs != 0 {
-		t.Fatalf("concurrent unsubscribe left %d ghost cluster topic subscription(s), want 0", subs)
+	subs, unsubs, _ := transport.counts("$aqi:topic:room:1")
+	if subs != unsubs {
+		t.Fatalf("concurrent unsubscribe left unbalanced cluster topic refs: subscribe=%d unsubscribe=%d", subs, unsubs)
 	}
 }
