@@ -103,12 +103,13 @@ func TestClusterDisabledIsNoOp(t *testing.T) {
 	}
 }
 
-func TestClusterDisabledFastPathDoesNotTouchStateLock(t *testing.T) {
+func TestClusterDisabledFastPathDoesNotTouchTopicLock(t *testing.T) {
 	clearClusterTransport()
 	t.Cleanup(clearClusterTransport)
 
-	clusterState.Lock()
-	defer clusterState.Unlock()
+	topicMu := clusterTopicMutex("room:1")
+	topicMu.Lock()
+	defer topicMu.Unlock()
 
 	done := make(chan struct{})
 	go func() {
@@ -121,7 +122,7 @@ func TestClusterDisabledFastPathDoesNotTouchStateLock(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("disabled cluster path blocked on cluster state lock")
+		t.Fatal("disabled cluster path blocked on topic lock")
 	}
 }
 
