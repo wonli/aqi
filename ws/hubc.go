@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const userLifecycleLockCount = 64
+
 var Hub *Hubc
 
 type Hubc struct {
@@ -14,6 +16,8 @@ type Hubc struct {
 
 	//已登录用户 map[string]*User
 	Users *sync.Map
+
+	userLifecycleLocks [userLifecycleLockCount]sync.Mutex
 
 	//用户数统计
 	LoginCount int
@@ -78,6 +82,36 @@ func (h *Hubc) Run() {
 	}
 }
 
+func (h *Hubc) userLifecycleMutex(uid string) *sync.Mutex {
+	var hash uint32 = 2166136261
+	for i := 0; i < len(uid); i++ {
+		hash ^= uint32(uid[i])
+		hash *= 16777619
+	}
+	return &h.userLifecycleLocks[hash%userLifecycleLockCount]
+}
+
+func (h *Hubc) cleanupUser(uid string, user *User, cutoff time.Time) bool {
+	if h == nil || h.Users == nil || user == nil {
+		return false
+	}
+
+	lifecycleMu := h.userLifecycleMutex(uid)
+	lifecycleMu.Lock()
+	defer lifecycleMu.Unlock()
+
+	current, ok := h.Users.Load(uid)
+	if !ok || current != user {
+		return false
+	}
+	if user.ClientCount() != 0 || user.LastHeartbeat().After(cutoff) {
+		return false
+	}
+
+	user.UnsubAllTopics()
+	return h.Users.CompareAndDelete(uid, user)
+}
+
 func (h *Hubc) guard() {
 	cleanupTTL := 5 * time.Minute
 	timer := time.NewTicker(30 * time.Second)
@@ -88,20 +122,25 @@ func (h *Hubc) guard() {
 			guardFn(h)
 		}
 
+		cutoff := time.Now().Add(-cleanupTTL)
 		userCount := 0
 		h.Users.Range(func(key, value any) bool {
+			uid, ok := key.(string)
+			if !ok {
+				return true
+			}
 			user, ok := value.(*User)
 			if !ok || user == nil {
 				return true
 			}
 
-			if user.ClientCount() == 0 {
-				if time.Since(user.LastHeartbeat()) >= cleanupTTL {
-					user.UnsubAllTopics()
-					h.Users.Delete(key)
+			if user.ClientCount() == 0 && !user.LastHeartbeat().After(cutoff) {
+				if h.cleanupUser(uid, user, cutoff) {
 					h.PubSub.Pub("cleanupUser", H{"suid": user.Suid})
+					return true
 				}
-			} else {
+			}
+			if user.ClientCount() > 0 {
 				userCount++
 			}
 
@@ -202,6 +241,10 @@ func (h *Hubc) UserClient(uid, appId string) *Client {
 }
 
 func (h *Hubc) UserLogin(uid, appId string, client *Client) error {
+	lifecycleMu := h.userLifecycleMutex(uid)
+	lifecycleMu.Lock()
+	defer lifecycleMu.Unlock()
+
 	candidate := NewUser(uid)
 	stored, _ := h.Users.LoadOrStore(uid, candidate)
 	user := stored.(*User)
