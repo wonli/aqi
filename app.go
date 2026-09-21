@@ -1,9 +1,9 @@
 package aqi
 
 import (
+	"context"
 	"errors"
 	"fmt"
-
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/wonli/aqi/internal/config"
 	"github.com/wonli/aqi/logger"
+	"github.com/wonli/aqi/store"
 	"github.com/wonli/aqi/telemetry"
 	"github.com/wonli/aqi/validate"
 	"github.com/wonli/aqi/ws"
@@ -53,6 +54,7 @@ type AppConfig struct {
 	HttpServer            http.Handler //http server
 	WebSocketMaxFrameSize int64
 	Telemetry             telemetry.Provider
+	Cluster               bool
 
 	RemoteProvider *RemoteProvider //远程配置支持etcd, consul
 
@@ -209,6 +211,11 @@ func Init(options ...Option) *AppConfig {
 	//初始化日志库
 	logger.Init(c, acf.devMode)
 
+	if err = bootstrapCluster(acf); err != nil {
+		color.Red("failed to init AQI cluster: %s", err.Error())
+		os.Exit(1)
+	}
+
 	//validate语言配置
 	validate.InitTranslator(acf.Language)
 
@@ -233,6 +240,35 @@ func Init(options ...Option) *AppConfig {
 	//初始化hub
 	ws.InitManager()
 	return acf
+}
+
+func bootstrapCluster(appConfig *AppConfig) error {
+	if appConfig == nil || !appConfig.Cluster {
+		return nil
+	}
+	if !viper.IsSet("redis.aqi") {
+		return errors.New("AQI cluster enabled but redis.aqi is not configured")
+	}
+
+	redisStore := store.Redis("redis.aqi")
+	redisConfig := redisStore.Config()
+	if redisConfig == nil || strings.TrimSpace(redisConfig.Addr) == "" {
+		return errors.New("AQI cluster enabled but redis.aqi is not configured")
+	}
+	client := redisStore.Use()
+	if client == nil {
+		return errors.New("AQI cluster could not create redis.aqi client")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("AQI cluster redis.aqi unavailable: %w", err)
+	}
+	if err := ws.InitCluster(client); err != nil {
+		return fmt.Errorf("AQI cluster initialization failed: %w", err)
+	}
+	return nil
 }
 
 func isConfigFileNotFound(err error) bool {
