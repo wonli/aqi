@@ -55,6 +55,7 @@ type AppConfig struct {
 	WebSocketMaxFrameSize int64
 	Telemetry             telemetry.Provider
 	Cluster               bool
+
 	clusterTransportFactory ClusterTransportFactory
 
 	RemoteProvider *RemoteProvider //远程配置支持etcd, consul
@@ -171,7 +172,6 @@ func Init(options ...Option) *AppConfig {
 				if acf.WatchHandler != nil {
 					acf.WatchHandler()
 				}
-			}
 		}()
 	}
 
