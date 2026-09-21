@@ -50,7 +50,7 @@ redis:
 
 `WithCluster()` only enables the feature. Redis is resolved after YAML is loaded. If `redis.aqi` is absent or unusable, startup fails clearly.
 
-No Redis address is passed to `WithCluster()`.
+No Redis address or node identifier is passed to `WithCluster()`.
 
 ## Cluster transport
 
@@ -69,43 +69,72 @@ The first implementation uses Redis Pub/Sub.
 
 Cluster transports bytes only. It never transports `*Client`, `*User`, `TopicMsg.Ori`, Hub state, or arbitrary Go objects.
 
+## Redis channel namespace
+
+AQI owns two internal Redis channel namespaces:
+
+```text
+$aqi:user:<uid>
+$aqi:topic:<topicId>
+```
+
+Business code never needs to construct these names. It continues to use ordinary user IDs and Topic IDs:
+
+```text
+B          -> $aqi:user:B
+room:123   -> $aqi:topic:room:123
+game:456   -> $aqi:topic:game:456
+```
+
+AQI does not interpret the business Topic ID. `room`, `game`, `chat`, or any other prefix belongs to the business layer.
+
+Business Topic IDs are not restricted. A business may even use a Topic ID such as `$aqi:user:B`; AQI maps it to `$aqi:topic:$aqi:user:B`, which remains distinct from the internal direct-user channel `$aqi:user:B`.
+
 ## User routing
 
 Each logged-in user has an internal cluster channel derived from the user ID, for example:
 
 ```text
-$user:B
+$aqi:user:B
 ```
 
 AQI subscribes at **node level**, not per physical client.
 
 For a local user B:
 
-- `AppClients` changes `0 -> 1`: subscribe `$user:B`
+- `AppClients` changes `0 -> 1`: subscribe `$aqi:user:B`
 - `AppClients` changes `1 -> 2` (or more): no Redis change
 - `AppClients` changes `2 -> 1`: no Redis change
-- `AppClients` changes `1 -> 0`: unsubscribe `$user:B`
+- `AppClients` changes `1 -> 0`: unsubscribe `$aqi:user:B`
 
-Thus, if B has five devices spread across five AQI nodes, Redis has at most five subscribers for `$user:B`. If several devices land on one node, that node still has only one Redis subscription.
+Thus, if B has five devices spread across five AQI nodes, Redis has at most five subscribers for `$aqi:user:B`. If several devices land on one node, that node still has only one Redis subscription.
 
-A cross-node direct send publishes to `$user:B`. Redis delivers only to AQI nodes currently subscribed to that user. Each receiving node then sends to its local `User.AppClients`.
+A cross-node direct send publishes to `$aqi:user:B`. Redis delivers only to AQI nodes currently subscribed to that user. Each receiving node then sends to its local `User.AppClients`.
 
 No `user -> node` registry is maintained.
 
 ## Topic routing
 
-For normal topics, Cluster maintains a node-local online reference count:
+Business Topic IDs are wrapped only at the Redis boundary:
 
 ```text
-clusterRefs[topic] = number of locally-online subscribed users
+room:123 -> $aqi:topic:room:123
+```
+
+For normal topics, Cluster maintains a node-local online reference count for the internal Redis channel:
+
+```text
+clusterRefs[$aqi:topic:<topicId>] = number of locally-online subscribed users
 ```
 
 Redis transitions only on the edges:
 
-- `0 -> 1`: `SUBSCRIBE topic`
-- `1 -> 0`: `UNSUBSCRIBE topic`
+- `0 -> 1`: `SUBSCRIBE $aqi:topic:<topicId>`
+- `1 -> 0`: `UNSUBSCRIBE $aqi:topic:<topicId>`
 
-Multiple local users subscribed to the same topic still create only one Redis subscription from that AQI node.
+Multiple local users subscribed to the same business topic still create only one Redis subscription from that AQI node.
+
+On inbound Redis delivery, AQI strips `$aqi:topic:` and delivers the original Topic ID to the local PubSub layer.
 
 ## Five-minute reconnect grace period
 
@@ -118,14 +147,14 @@ Important distinction:
 
 When a user's last local client disconnects:
 
-1. unsubscribe the user's `$user:<id>` cluster channel
-2. release cluster refs for that user's existing `SubTopics`
+1. unsubscribe the user's `$aqi:user:<id>` cluster channel
+2. release `$aqi:topic:<topicId>` cluster refs for that user's existing `SubTopics`
 3. keep `User` and `SubTopics` locally as today
 
 If the user reconnects to the **same node** during the grace period:
 
-1. subscribe `$user:<id>` again
-2. reacquire cluster refs for the retained `SubTopics`
+1. subscribe `$aqi:user:<id>` again
+2. reacquire `$aqi:topic:<topicId>` cluster refs for the retained `SubTopics`
 
 If the user reconnects to a **different node**, only identity routing is re-established there. AQI does not synchronize the old node's `SubTopics`; the business/client must resubscribe as needed. This is intentional to avoid turning Cluster into distributed session storage.
 
@@ -140,7 +169,13 @@ For a cluster-aware publish:
 
 Redis-delivered messages are injected into a local-only delivery path and must never be republished to Redis.
 
-This avoids message loops and keeps same-node delivery at current in-memory speed.
+Each AQI process generates a random 16-byte `instanceID` when cluster transport is installed. The Redis wire payload is deliberately minimal:
+
+```text
+[16-byte instanceID][payload]
+```
+
+The `instanceID` exists only to drop Redis self-echo. It is not a configured node identity, is not stable across restarts, and is not used for ownership or routing. No protocol version or additional envelope fields are added unless a concrete future need appears.
 
 ## Lifecycle integration
 
@@ -175,17 +210,18 @@ Minimum coverage:
 
 1. `WithCluster()` disabled preserves current behavior and requires no Redis.
 2. `WithCluster()` enabled fails startup when `redis.aqi` is missing/invalid.
-3. First local login subscribes `$user:<id>` exactly once.
+3. First local login subscribes `$aqi:user:<id>` exactly once.
 4. Additional local clients for the same user do not resubscribe.
 5. Last local client disconnect unsubscribes exactly once.
 6. Same-app client replacement does not accidentally unsubscribe an online user.
 7. A retained user's topics are released from Redis when offline and reacquired on same-node reconnect.
-8. First online local subscriber to a normal topic subscribes Redis; last online subscriber unsubscribes.
-9. Cross-node user send reaches the correct remote node only.
-10. Cross-node topic publish reaches subscribed nodes and not unrelated nodes.
-11. Redis-originated messages are delivered locally without republishing (no loop).
-12. Existing `PubSub.Unsub` double-removal path is removed and covered by regression test.
-13. Race tests pass for login/logout/topic lifecycle.
+8. First online local subscriber to a normal topic subscribes `$aqi:topic:<topicId>`; last online subscriber unsubscribes.
+9. Business Topic IDs beginning with `$aqi:` remain valid and are nested under `$aqi:topic:`.
+10. Cross-node user send reaches the correct remote node only.
+11. Cross-node topic publish reaches subscribed nodes and not unrelated nodes.
+12. Redis-originated messages are delivered locally without republishing (no loop).
+13. Existing `PubSub.Unsub` double-removal path is removed and covered by regression test.
+14. Race tests pass for login/logout/topic lifecycle.
 
 ## Scope guard
 
