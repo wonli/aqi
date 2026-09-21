@@ -18,6 +18,8 @@ const (
 	clusterTopicLockCount = 64
 )
 
+var errClusterAlreadyInitialized = errors.New("aqi cluster: transport already initialized")
+
 // ClusterTransport is the minimal transport contract AQI needs for inter-node routing.
 // Channel names and payload bytes are opaque to the transport and must be preserved.
 type ClusterTransport interface {
@@ -74,15 +76,12 @@ func newClusterInstanceID() ([clusterInstanceIDSize]byte, error) {
 	return id, err
 }
 
-func installClusterTransport(t ClusterTransport, instanceID [clusterInstanceIDSize]byte) {
-	next := &clusterRuntime{
+func installClusterTransport(t ClusterTransport, instanceID [clusterInstanceIDSize]byte) bool {
+	return clusterState.CompareAndSwap(nil, &clusterRuntime{
 		transport:  t,
 		instanceID: instanceID,
 		refs:       make(map[string]int),
-	}
-	if old := clusterState.Swap(next); old != nil {
-		_ = old.transport.Close()
-	}
+	})
 }
 
 // InitClusterTransport creates and installs AQI's process-wide cluster transport.
@@ -90,6 +89,9 @@ func installClusterTransport(t ClusterTransport, instanceID [clusterInstanceIDSi
 func InitClusterTransport(factory ClusterTransportFactory) error {
 	if factory == nil {
 		return errors.New("aqi cluster: transport factory is nil")
+	}
+	if clusterState.Load() != nil {
+		return errClusterAlreadyInitialized
 	}
 
 	transport, err := factory(clusterHandleInbound)
@@ -105,21 +107,26 @@ func InitClusterTransport(factory ClusterTransportFactory) error {
 		_ = transport.Close()
 		return fmt.Errorf("aqi cluster: cannot generate instance id: %w", err)
 	}
-	installClusterTransport(transport, instanceID)
+	if !installClusterTransport(transport, instanceID) {
+		_ = transport.Close()
+		return errClusterAlreadyInitialized
+	}
 	return nil
 }
 
 // setClusterTransport is a compact test helper for installing fake transports.
 func setClusterTransport(t ClusterTransport) {
+	clearClusterTransport()
 	if t == nil {
-		clearClusterTransport()
 		return
 	}
 	instanceID, err := newClusterInstanceID()
 	if err != nil {
 		panic("aqi: cannot generate cluster instance id: " + err.Error())
 	}
-	installClusterTransport(t, instanceID)
+	if !installClusterTransport(t, instanceID) {
+		panic("aqi: cannot install test cluster transport")
+	}
 }
 
 func clearClusterTransport() {
