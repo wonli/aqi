@@ -9,8 +9,9 @@ import (
 	"github.com/wonli/aqi/logger"
 )
 
-const clusterUserPrefix = "$user:"
-const clusterNodeIDSize = 16
+const clusterUserPrefix = "$aqi:user:"
+const clusterTopicPrefix = "$aqi:topic:"
+const clusterInstanceIDSize = 16
 const clusterTopicLockCount = 64
 
 type clusterTransport interface {
@@ -22,9 +23,9 @@ type clusterTransport interface {
 
 var clusterState = struct {
 	sync.Mutex
-	transport clusterTransport
-	refs      map[string]int
-	nodeID    [clusterNodeIDSize]byte
+	transport  clusterTransport
+	refs       map[string]int
+	instanceID [clusterInstanceIDSize]byte
 }{
 	refs: make(map[string]int),
 }
@@ -43,29 +44,33 @@ func clusterTopicMutex(topic string) *sync.Mutex {
 	return &clusterTopicLocks[hash%clusterTopicLockCount]
 }
 
-func clusterUserTopic(uid string) string {
+func clusterUserChannel(uid string) string {
 	return clusterUserPrefix + uid
 }
 
-func newClusterNodeID() [clusterNodeIDSize]byte {
-	var id [clusterNodeIDSize]byte
+func clusterTopicChannel(topicID string) string {
+	return clusterTopicPrefix + topicID
+}
+
+func newClusterInstanceID() [clusterInstanceIDSize]byte {
+	var id [clusterInstanceIDSize]byte
 	if _, err := rand.Read(id[:]); err != nil {
-		panic("aqi: cannot generate cluster node id: " + err.Error())
+		panic("aqi: cannot generate cluster instance id: " + err.Error())
 	}
 	return id
 }
 
 func setClusterTransport(t clusterTransport) {
-	var nodeID [clusterNodeIDSize]byte
+	var instanceID [clusterInstanceIDSize]byte
 	if t != nil {
-		nodeID = newClusterNodeID()
+		instanceID = newClusterInstanceID()
 	}
 
 	clusterState.Lock()
 	old := clusterState.transport
 	clusterState.transport = t
 	clusterState.refs = make(map[string]int)
-	clusterState.nodeID = nodeID
+	clusterState.instanceID = instanceID
 	clusterState.Unlock()
 
 	if old != nil {
@@ -78,7 +83,7 @@ func clearClusterTransport() {
 	old := clusterState.transport
 	clusterState.transport = nil
 	clusterState.refs = make(map[string]int)
-	clusterState.nodeID = [clusterNodeIDSize]byte{}
+	clusterState.instanceID = [clusterInstanceIDSize]byte{}
 	clusterState.Unlock()
 
 	if old != nil {
@@ -156,42 +161,42 @@ func clusterPublish(topic string, data []byte) bool {
 
 	clusterState.Lock()
 	transport := clusterState.transport
-	nodeID := clusterState.nodeID
+	instanceID := clusterState.instanceID
 	clusterState.Unlock()
 	if transport == nil {
 		return false
 	}
 
-	if err := transport.Publish(topic, clusterEncodeWire(nodeID, data)); err != nil {
+	if err := transport.Publish(topic, clusterEncodeWire(instanceID, data)); err != nil {
 		clusterLogError("publish", topic, err)
 		return false
 	}
 	return true
 }
 
-func clusterCurrentNodeID() [clusterNodeIDSize]byte {
+func clusterCurrentInstanceID() [clusterInstanceIDSize]byte {
 	clusterState.Lock()
 	defer clusterState.Unlock()
-	return clusterState.nodeID
+	return clusterState.instanceID
 }
 
-func clusterEncodeWire(origin [clusterNodeIDSize]byte, data []byte) []byte {
-	wire := make([]byte, clusterNodeIDSize+len(data))
-	copy(wire[:clusterNodeIDSize], origin[:])
-	copy(wire[clusterNodeIDSize:], data)
+func clusterEncodeWire(origin [clusterInstanceIDSize]byte, data []byte) []byte {
+	wire := make([]byte, clusterInstanceIDSize+len(data))
+	copy(wire[:clusterInstanceIDSize], origin[:])
+	copy(wire[clusterInstanceIDSize:], data)
 	return wire
 }
 
-func clusterDecodeWire(wire []byte) ([clusterNodeIDSize]byte, []byte, bool) {
-	var origin [clusterNodeIDSize]byte
-	if len(wire) < clusterNodeIDSize {
+func clusterDecodeWire(wire []byte) ([clusterInstanceIDSize]byte, []byte, bool) {
+	var origin [clusterInstanceIDSize]byte
+	if len(wire) < clusterInstanceIDSize {
 		return origin, nil, false
 	}
-	copy(origin[:], wire[:clusterNodeIDSize])
-	return origin, append([]byte(nil), wire[clusterNodeIDSize:]...), true
+	copy(origin[:], wire[:clusterInstanceIDSize])
+	return origin, append([]byte(nil), wire[clusterInstanceIDSize:]...), true
 }
 
-func clusterHandleInbound(topic string, wire []byte) {
+func clusterHandleInbound(channel string, wire []byte) {
 	origin, data, ok := clusterDecodeWire(wire)
 	if !ok {
 		return
@@ -199,9 +204,9 @@ func clusterHandleInbound(topic string, wire []byte) {
 
 	clusterState.Lock()
 	enabled := clusterState.transport != nil
-	nodeID := clusterState.nodeID
+	instanceID := clusterState.instanceID
 	clusterState.Unlock()
-	if !enabled || bytes.Equal(origin[:], nodeID[:]) {
+	if !enabled || bytes.Equal(origin[:], instanceID[:]) {
 		return
 	}
 
@@ -209,18 +214,22 @@ func clusterHandleInbound(topic string, wire []byte) {
 	if h == nil {
 		return
 	}
-	if strings.HasPrefix(topic, clusterUserPrefix) {
-		uid := strings.TrimPrefix(topic, clusterUserPrefix)
+
+	switch {
+	case strings.HasPrefix(channel, clusterUserPrefix):
+		uid := strings.TrimPrefix(channel, clusterUserPrefix)
 		if uid == "" {
 			return
 		}
 		if user := h.User(uid); user != nil {
 			user.SendMsg(data)
 		}
-		return
-	}
-	if h.PubSub != nil {
-		h.PubSub.deliverCluster(topic, data)
+	case strings.HasPrefix(channel, clusterTopicPrefix):
+		topicID := strings.TrimPrefix(channel, clusterTopicPrefix)
+		if topicID == "" || h.PubSub == nil {
+			return
+		}
+		h.PubSub.deliverCluster(topicID, data)
 	}
 }
 
