@@ -1,6 +1,7 @@
 package aqi
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,6 +13,15 @@ import (
 )
 
 type Option func(config *AppConfig) error
+
+// ClusterTransport is the minimal transport contract AQI needs for inter-node routing.
+type ClusterTransport = ws.ClusterTransport
+
+// ClusterMessageHandler is the inbound callback supplied to custom cluster transports.
+type ClusterMessageHandler = ws.ClusterMessageHandler
+
+// ClusterTransportFactory builds a custom cluster transport after AQI config has loaded.
+type ClusterTransportFactory = ws.ClusterTransportFactory
 
 // ConfigBuilder is used to modify the generated default config before it is written.
 type ConfigBuilder = internalconfig.Builder
@@ -118,6 +128,20 @@ func Telemetry(provider telemetry.Provider) Option {
 func WithCluster() Option {
 	return func(config *AppConfig) error {
 		config.Cluster = true
+		return nil
+	}
+}
+
+// WithClusterTransport enables cluster routing with a caller-provided transport.
+// The factory runs after AQI configuration has loaded and receives the inbound
+// callback it must invoke for messages received from other AQI nodes.
+func WithClusterTransport(factory ClusterTransportFactory) Option {
+	return func(config *AppConfig) error {
+		if factory == nil {
+			return errors.New("aqi cluster: transport factory is nil")
+		}
+		config.Cluster = true
+		config.ClusterTransportFactory = factory
 		return nil
 	}
 }
