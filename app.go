@@ -172,6 +172,7 @@ func Init(options ...Option) *AppConfig {
 				if acf.WatchHandler != nil {
 					acf.WatchHandler()
 				}
+			}
 		}()
 	}
 
