@@ -12,9 +12,14 @@ type Topic struct {
 	SubHandlers sync.Map //SubHandlers map[string]func(msg *TopicMsg) //内部组件间通知
 }
 
-func (a *Topic) AddSubUser(user *User) {
+func (a *Topic) AddSubUser(user *User) bool {
+	if user == nil {
+		return false
+	}
+
+	_, loaded := a.SubUsers.LoadOrStore(user.Suid, time.Now())
 	user.AddSubTopic(a)
-	a.SubUsers.LoadOrStore(user.Suid, time.Now())
+	return !loaded
 }
 
 func (a *Topic) AddSubHandle(f func(msg *TopicMsg)) {

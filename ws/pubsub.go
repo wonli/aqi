@@ -50,9 +50,17 @@ func (a *PubSub) Pub(topicId string, data any) bool {
 	}
 }
 
-// Sub 订阅主题
-func (a *PubSub) Sub(topicId string, user *User) {
-	a.initTopic(topicId).AddSubUser(user)
+// Sub 订阅主题。返回值表示是否新增了用户/主题订阅关系。
+func (a *PubSub) Sub(topicId string, user *User) bool {
+	if user == nil {
+		return false
+	}
+
+	added := a.initTopic(topicId).AddSubUser(user)
+	if added && user.IsOnline() {
+		clusterAcquire(topicId)
+	}
+	return added
 }
 
 // SubFunc 以函数方式订阅
@@ -72,6 +80,9 @@ func (a *PubSub) Unsub(topicId string, user *User) bool {
 	}
 	if topic != nil {
 		topic.RemoveSubUser(user.Suid)
+	}
+	if user.IsOnline() {
+		clusterRelease(topicId)
 	}
 	return true
 }
