@@ -16,7 +16,7 @@ type redisCluster struct {
 	client    *redis.Client
 	ctx       context.Context
 	cancel    context.CancelFunc
-	onMessage func(string, []byte)
+	onMessage ClusterMessageHandler
 
 	mu        sync.Mutex
 	pubsub    *redis.PubSub
@@ -26,7 +26,7 @@ type redisCluster struct {
 	closeErr  error
 }
 
-func newRedisCluster(client *redis.Client, onMessage func(string, []byte)) (*redisCluster, error) {
+func newRedisCluster(client *redis.Client, onMessage ClusterMessageHandler) (*redisCluster, error) {
 	if client == nil {
 		return nil, errors.New("aqi cluster: redis client is nil")
 	}
@@ -39,8 +39,8 @@ func newRedisCluster(client *redis.Client, onMessage func(string, []byte)) (*red
 	}, nil
 }
 
-func (r *redisCluster) Subscribe(topic string) error {
-	if topic == "" {
+func (r *redisCluster) Subscribe(channel string) error {
+	if channel == "" {
 		return nil
 	}
 	if err := r.ctx.Err(); err != nil {
@@ -51,18 +51,18 @@ func (r *redisCluster) Subscribe(topic string) error {
 	if r.pubsub == nil {
 		// Client.Subscribe keeps the subscription set even when the initial
 		// network write fails; go-redis reconnects and resubscribes it later.
-		r.pubsub = r.client.Subscribe(r.ctx, topic)
+		r.pubsub = r.client.Subscribe(r.ctx, channel)
 		r.startReceiver(r.pubsub)
 		r.mu.Unlock()
 		return nil
 	}
 	pubsub := r.pubsub
 	r.mu.Unlock()
-	return pubsub.Subscribe(r.ctx, topic)
+	return pubsub.Subscribe(r.ctx, channel)
 }
 
-func (r *redisCluster) Unsubscribe(topic string) error {
-	if topic == "" {
+func (r *redisCluster) Unsubscribe(channel string) error {
+	if channel == "" {
 		return nil
 	}
 	if err := r.ctx.Err(); err != nil {
@@ -75,14 +75,14 @@ func (r *redisCluster) Unsubscribe(topic string) error {
 	if pubsub == nil {
 		return nil
 	}
-	return pubsub.Unsubscribe(r.ctx, topic)
+	return pubsub.Unsubscribe(r.ctx, channel)
 }
 
-func (r *redisCluster) Publish(topic string, data []byte) error {
+func (r *redisCluster) Publish(channel string, data []byte) error {
 	if err := r.ctx.Err(); err != nil {
 		return err
 	}
-	return r.client.Publish(r.ctx, topic, data).Err()
+	return r.client.Publish(r.ctx, channel, data).Err()
 }
 
 func (r *redisCluster) Close() error {
@@ -126,12 +126,9 @@ func (r *redisCluster) receive(receiver redisReceiver) {
 	}
 }
 
-// InitCluster installs Redis Pub/Sub as AQI's realtime inter-node transport.
-func InitCluster(client *redis.Client) error {
-	transport, err := newRedisCluster(client, clusterHandleInbound)
-	if err != nil {
-		return err
-	}
-	setClusterTransport(transport)
-	return nil
+// InitRedisCluster installs Redis Pub/Sub as AQI's realtime inter-node transport.
+func InitRedisCluster(client *redis.Client) error {
+	return InitClusterTransport(func(handler ClusterMessageHandler) (ClusterTransport, error) {
+		return newRedisCluster(client, handler)
+	})
 }
