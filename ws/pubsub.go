@@ -88,8 +88,8 @@ func (a *PubSub) subscribe(topicId string, user *User) bool {
 		return false
 	}
 
-	added := a.initTopic(topicId).addSubUser(user)
-	if added && clusterEnabled() && user.IsOnline() {
+	added, online := a.initTopic(topicId).addSubUser(user)
+	if added && online && clusterEnabled() {
 		clusterAcquire(clusterTopicChannel(topicId))
 	}
 	return added
