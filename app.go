@@ -50,12 +50,12 @@ type AppConfig struct {
 
 	DefaultConfigHook func(*ConfigBuilder)
 
-	Guard                   ws.GuardFunc //守护回调
-	HttpServer              http.Handler //http server
-	WebSocketMaxFrameSize   int64
-	Telemetry               telemetry.Provider
-	Cluster                 bool
-	ClusterTransportFactory ClusterTransportFactory
+	Guard                 ws.GuardFunc //守护回调
+	HttpServer            http.Handler //http server
+	WebSocketMaxFrameSize int64
+	Telemetry             telemetry.Provider
+	Cluster               bool
+	clusterTransportFactory ClusterTransportFactory
 
 	RemoteProvider *RemoteProvider //远程配置支持etcd, consul
 
@@ -247,8 +247,8 @@ func bootstrapCluster(appConfig *AppConfig) error {
 	if appConfig == nil || !appConfig.Cluster {
 		return nil
 	}
-	if appConfig.ClusterTransportFactory != nil {
-		if err := ws.InitClusterTransport(appConfig.ClusterTransportFactory); err != nil {
+	if appConfig.clusterTransportFactory != nil {
+		if err := ws.InitClusterTransport(appConfig.clusterTransportFactory); err != nil {
 			return fmt.Errorf("AQI cluster transport initialization failed: %w", err)
 		}
 		return nil
