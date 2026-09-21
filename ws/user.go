@@ -47,12 +47,17 @@ func NewUser(uid string) *User {
 	return user
 }
 
-func (u *User) AddSubTopic(topic *Topic) int {
+func (u *User) addSubTopic(topic *Topic) (int, bool) {
 	u.Lock()
 	defer u.Unlock()
 
 	u.SubTopics[topic.Id] = topic
-	return len(u.SubTopics)
+	return len(u.SubTopics), len(u.AppClients) > 0
+}
+
+func (u *User) AddSubTopic(topic *Topic) int {
+	count, _ := u.addSubTopic(topic)
+	return count
 }
 
 func (u *User) unsubscribeTopic(topicId string) (int, bool) {
