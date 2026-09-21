@@ -246,16 +246,11 @@ func bootstrapCluster(appConfig *AppConfig) error {
 	if appConfig == nil || !appConfig.Cluster {
 		return nil
 	}
-	if !viper.IsSet("redis.aqi") {
+	if strings.TrimSpace(viper.GetString("redis.aqi.addr")) == "" {
 		return errors.New("AQI cluster enabled but redis.aqi is not configured")
 	}
 
-	redisStore := store.Redis("redis.aqi")
-	redisConfig := redisStore.Config()
-	if redisConfig == nil || strings.TrimSpace(redisConfig.Addr) == "" {
-		return errors.New("AQI cluster enabled but redis.aqi is not configured")
-	}
-	client := redisStore.Use()
+	client := store.Redis("redis.aqi").Use()
 	if client == nil {
 		return errors.New("AQI cluster could not create redis.aqi client")
 	}
