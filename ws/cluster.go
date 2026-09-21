@@ -11,6 +11,7 @@ import (
 
 const clusterUserPrefix = "$user:"
 const clusterNodeIDSize = 16
+const clusterTopicLockCount = 64
 
 type clusterTransport interface {
 	Subscribe(topic string) error
@@ -26,6 +27,20 @@ var clusterState = struct {
 	nodeID    [clusterNodeIDSize]byte
 }{
 	refs: make(map[string]int),
+}
+
+// Subscription edge calls may involve network I/O. A small striped lock set
+// keeps SUBSCRIBE/UNSUBSCRIBE ordered for the same topic without serializing
+// unrelated topics behind one global network lock.
+var clusterTopicLocks [clusterTopicLockCount]sync.Mutex
+
+func clusterTopicMutex(topic string) *sync.Mutex {
+	var hash uint32 = 2166136261
+	for i := 0; i < len(topic); i++ {
+		hash ^= uint32(topic[i])
+		hash *= 16777619
+	}
+	return &clusterTopicLocks[hash%clusterTopicLockCount]
 }
 
 func clusterUserTopic(uid string) string {
@@ -76,6 +91,10 @@ func clusterAcquire(topic string) {
 		return
 	}
 
+	topicMu := clusterTopicMutex(topic)
+	topicMu.Lock()
+	defer topicMu.Unlock()
+
 	clusterState.Lock()
 	transport := clusterState.transport
 	if transport == nil {
@@ -97,6 +116,10 @@ func clusterRelease(topic string) {
 	if topic == "" {
 		return
 	}
+
+	topicMu := clusterTopicMutex(topic)
+	topicMu.Lock()
+	defer topicMu.Unlock()
 
 	clusterState.Lock()
 	transport := clusterState.transport
