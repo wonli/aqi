@@ -87,7 +87,7 @@ func TestSendToUserDeliversLocallyAndPublishesForRemoteNodes(t *testing.T) {
 	if got := <-client.Send; !bytes.Equal(got, []byte("hello")) {
 		t.Fatalf("local message = %q, want hello", got)
 	}
-	_, _, publishes := transport.counts("$user:B")
+	_, _, publishes := transport.counts("$aqi:user:B")
 	if publishes != 1 {
 		t.Fatalf("cluster publishes = %d, want 1", publishes)
 	}
@@ -105,11 +105,11 @@ func TestClusterDeliveryDropsPublishingNodeSelfEcho(t *testing.T) {
 	h.SendToUser("B", []byte("hello"))
 	<-client.Send
 
-	wire := transport.lastPayload("$user:B")
+	wire := transport.lastPayload("$aqi:user:B")
 	if len(wire) == 0 {
 		t.Fatal("cluster publish did not capture a wire payload")
 	}
-	clusterHandleInbound("$user:B", wire)
+	clusterHandleInbound("$aqi:user:B", wire)
 
 	select {
 	case got := <-client.Send:
@@ -127,11 +127,11 @@ func TestClusterDeliveryRemoteUserDoesNotRepublish(t *testing.T) {
 	h := installClusterDeliveryHub(t)
 	_, client := addClusterDeliveryUser(h, "B")
 
-	clusterHandleInbound("$user:B", remoteClusterWire(t, []byte("remote")))
+	clusterHandleInbound("$aqi:user:B", remoteClusterWire(t, []byte("remote")))
 	if got := <-client.Send; !bytes.Equal(got, []byte("remote")) {
 		t.Fatalf("remote user message = %q, want remote", got)
 	}
-	_, _, publishes := transport.counts("$user:B")
+	_, _, publishes := transport.counts("$aqi:user:B")
 	if publishes != 0 {
 		t.Fatalf("inbound user delivery republished %d times", publishes)
 	}
@@ -162,7 +162,7 @@ func TestPublishUsesSameEncodedPayloadLocallyAndRemotely(t *testing.T) {
 		t.Fatal("local topic message was not delivered")
 	}
 
-	wire := transport.lastPayload("room:1")
+	wire := transport.lastPayload("$aqi:topic:room:1")
 	_, remoteData, ok := clusterDecodeWire(wire)
 	if !ok {
 		t.Fatal("cluster topic payload is not a valid wire message")
@@ -185,14 +185,14 @@ func TestClusterDeliveryRemoteTopicSkipsHandlersAndRepublish(t *testing.T) {
 	handlerCalls := 0
 	topic.AddSubHandle(func(*TopicMsg) { handlerCalls++ })
 
-	clusterHandleInbound("room:1", remoteClusterWire(t, []byte("encoded")))
+	clusterHandleInbound("$aqi:topic:room:1", remoteClusterWire(t, []byte("encoded")))
 	if got := <-client.Send; !bytes.Equal(got, []byte("encoded")) {
 		t.Fatalf("remote topic message = %q, want encoded", got)
 	}
 	if handlerCalls != 0 {
 		t.Fatalf("remote topic invoked %d process-local handlers, want 0", handlerCalls)
 	}
-	_, _, publishes := transport.counts("room:1")
+	_, _, publishes := transport.counts("$aqi:topic:room:1")
 	if publishes != 0 {
 		t.Fatalf("inbound topic delivery republished %d times", publishes)
 	}
