@@ -27,7 +27,7 @@ func TestClusterUserTracksOnlyOnlineEdges(t *testing.T) {
 	if err := user.appLogin("iphone", first); err != nil {
 		t.Fatal(err)
 	}
-	subs, unsubs, _ := transport.counts("$user:B")
+	subs, unsubs, _ := transport.counts("$aqi:user:B")
 	if subs != 1 || unsubs != 0 {
 		t.Fatalf("first login subscribe/unsubscribe = %d/%d, want 1/0", subs, unsubs)
 	}
@@ -35,7 +35,7 @@ func TestClusterUserTracksOnlyOnlineEdges(t *testing.T) {
 	if err := user.appLogin("ipad", second); err != nil {
 		t.Fatal(err)
 	}
-	subs, unsubs, _ = transport.counts("$user:B")
+	subs, unsubs, _ = transport.counts("$aqi:user:B")
 	if subs != 1 || unsubs != 0 {
 		t.Fatalf("second login subscribe/unsubscribe = %d/%d, want 1/0", subs, unsubs)
 	}
@@ -43,7 +43,7 @@ func TestClusterUserTracksOnlyOnlineEdges(t *testing.T) {
 	if err := user.appLogout("iphone", first); err != nil {
 		t.Fatal(err)
 	}
-	_, unsubs, _ = transport.counts("$user:B")
+	_, unsubs, _ = transport.counts("$aqi:user:B")
 	if unsubs != 0 {
 		t.Fatalf("first logout unsubscribe = %d, want 0", unsubs)
 	}
@@ -51,7 +51,7 @@ func TestClusterUserTracksOnlyOnlineEdges(t *testing.T) {
 	if err := user.appLogout("ipad", second); err != nil {
 		t.Fatal(err)
 	}
-	_, unsubs, _ = transport.counts("$user:B")
+	_, unsubs, _ = transport.counts("$aqi:user:B")
 	if unsubs != 1 {
 		t.Fatalf("last logout unsubscribe = %d, want 1", unsubs)
 	}
@@ -83,7 +83,7 @@ func TestSameAppClusterReplacementDoesNotGoOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	subs, unsubs, _ := transport.counts("$user:B")
+	subs, unsubs, _ := transport.counts("$aqi:user:B")
 	if subs != 1 || unsubs != 0 {
 		t.Fatalf("replacement subscribe/unsubscribe = %d/%d, want 1/0", subs, unsubs)
 	}
@@ -105,7 +105,7 @@ func TestClusterUserReleasesAndReacquiresRetainedTopics(t *testing.T) {
 	if err := user.appLogin("ios", first); err != nil {
 		t.Fatal(err)
 	}
-	roomSubs, roomUnsubs, _ := transport.counts("room:1")
+	roomSubs, roomUnsubs, _ := transport.counts("$aqi:topic:room:1")
 	if roomSubs != 1 || roomUnsubs != 0 {
 		t.Fatalf("retained topic after login = %d/%d, want 1/0", roomSubs, roomUnsubs)
 	}
@@ -113,7 +113,7 @@ func TestClusterUserReleasesAndReacquiresRetainedTopics(t *testing.T) {
 	if err := user.appLogout("ios", first); err != nil {
 		t.Fatal(err)
 	}
-	roomSubs, roomUnsubs, _ = transport.counts("room:1")
+	roomSubs, roomUnsubs, _ = transport.counts("$aqi:topic:room:1")
 	if roomSubs != 1 || roomUnsubs != 1 {
 		t.Fatalf("retained topic after logout = %d/%d, want 1/1", roomSubs, roomUnsubs)
 	}
@@ -125,7 +125,7 @@ func TestClusterUserReleasesAndReacquiresRetainedTopics(t *testing.T) {
 	if err := user.appLogin("ios", second); err != nil {
 		t.Fatal(err)
 	}
-	roomSubs, roomUnsubs, _ = transport.counts("room:1")
+	roomSubs, roomUnsubs, _ = transport.counts("$aqi:topic:room:1")
 	if roomSubs != 2 || roomUnsubs != 1 {
 		t.Fatalf("retained topic after reconnect = %d/%d, want 2/1", roomSubs, roomUnsubs)
 	}
