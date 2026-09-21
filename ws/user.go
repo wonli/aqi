@@ -97,6 +97,14 @@ func (u *User) UnsubAllTopics() int {
 	return remaining
 }
 
+func (u *User) subTopicIDsLocked() []string {
+	topics := make([]string, 0, len(u.SubTopics))
+	for topicID := range u.SubTopics {
+		topics = append(topics, topicID)
+	}
+	return topics
+}
+
 // SetLastHeartbeat updates the user's latest client heartbeat time.
 func (u *User) SetLastHeartbeat(t time.Time) {
 	if u == nil {
@@ -122,30 +130,43 @@ func (u *User) appLogin(appId string, client *Client) error {
 	var replacedClient *Client
 
 	u.Lock()
+	wasOffline := len(u.AppClients) == 0
+	matchedApp := false
 	for i, app := range u.AppClients {
 		_, existingAppId, _ := app.LoginState()
-		if existingAppId == appId {
-			if app.Conn != client.Conn {
-				replacedClient = app
-				u.AppClients = slices.Delete(u.AppClients, i, i+1)
-				u.AppClients = append(u.AppClients, client)
-			}
+		if existingAppId != appId {
+			continue
+		}
 
-			client.setLoginState(u, appId)
-			u.Unlock()
+		matchedApp = true
+		if app.Conn != client.Conn {
+			replacedClient = app
+			u.AppClients = slices.Delete(u.AppClients, i, i+1)
+			u.AppClients = append(u.AppClients, client)
+		}
+		break
+	}
+	if !matchedApp {
+		u.AppClients = append(u.AppClients, client)
+	}
+	client.setLoginState(u, appId)
+	becameOnline := wasOffline && len(u.AppClients) > 0
+	var retainedTopics []string
+	if becameOnline {
+		retainedTopics = u.subTopicIDsLocked()
+	}
+	u.Unlock()
 
-			if replacedClient != nil {
-				replacedClient.Disconnect()
-			}
-			u.Hub.PubSub.Pub("login", u)
-			return nil
+	if becameOnline {
+		clusterAcquire(clusterUserTopic(u.Suid))
+		for _, topicID := range retainedTopics {
+			clusterAcquire(topicID)
 		}
 	}
 
-	client.setLoginState(u, appId)
-	u.AppClients = append(u.AppClients, client)
-	u.Unlock()
-
+	if replacedClient != nil {
+		replacedClient.Disconnect()
+	}
 	u.Hub.PubSub.Pub("login", u)
 	return nil
 }
@@ -153,14 +174,28 @@ func (u *User) appLogin(appId string, client *Client) error {
 // app退出
 func (u *User) appLogout(appId string, logoutClient *Client) error {
 	u.Lock()
+	removed := false
 	for appIndex, appClient := range u.AppClients {
 		_, existingAppId, _ := appClient.LoginState()
 		if existingAppId == appId && logoutClient.Conn == appClient.Conn {
 			u.AppClients = slices.Delete(u.AppClients, appIndex, appIndex+1)
+			removed = true
 			break
 		}
 	}
+	becameOffline := removed && len(u.AppClients) == 0
+	var retainedTopics []string
+	if becameOffline {
+		retainedTopics = u.subTopicIDsLocked()
+	}
 	u.Unlock()
+
+	if becameOffline {
+		clusterRelease(clusterUserTopic(u.Suid))
+		for _, topicID := range retainedTopics {
+			clusterRelease(topicID)
+		}
+	}
 
 	u.Hub.PubSub.Pub("logout", u)
 	return nil
