@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 type fakeClusterTransport struct {
@@ -116,5 +117,92 @@ func TestClusterPublishReportsTransportFailure(t *testing.T) {
 	_, _, publishes := transport.counts("room:1")
 	if publishes != 1 {
 		t.Fatalf("publish calls = %d, want 1", publishes)
+	}
+}
+
+type blockingClusterTransport struct {
+	mu                sync.Mutex
+	subscribeStarted  chan struct{}
+	allowSubscribe    chan struct{}
+	unsubscribeCalled chan struct{}
+	startOnce         sync.Once
+	unsubOnce         sync.Once
+	subscribed        bool
+}
+
+func newBlockingClusterTransport() *blockingClusterTransport {
+	return &blockingClusterTransport{
+		subscribeStarted:  make(chan struct{}),
+		allowSubscribe:    make(chan struct{}),
+		unsubscribeCalled: make(chan struct{}),
+	}
+}
+
+func (f *blockingClusterTransport) Subscribe(string) error {
+	f.startOnce.Do(func() { close(f.subscribeStarted) })
+	<-f.allowSubscribe
+	f.mu.Lock()
+	f.subscribed = true
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *blockingClusterTransport) Unsubscribe(string) error {
+	f.unsubOnce.Do(func() { close(f.unsubscribeCalled) })
+	f.mu.Lock()
+	f.subscribed = false
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *blockingClusterTransport) Publish(string, []byte) error { return nil }
+func (f *blockingClusterTransport) Close() error                 { return nil }
+
+func (f *blockingClusterTransport) isSubscribed() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.subscribed
+}
+
+func TestClusterAcquireReleasePreservesFinalZeroSubscriptionState(t *testing.T) {
+	clearClusterTransport()
+	t.Cleanup(clearClusterTransport)
+	transport := newBlockingClusterTransport()
+	setClusterTransport(transport)
+
+	acquireDone := make(chan struct{})
+	go func() {
+		clusterAcquire("room:1")
+		close(acquireDone)
+	}()
+	<-transport.subscribeStarted
+
+	releaseDone := make(chan struct{})
+	go func() {
+		clusterRelease("room:1")
+		close(releaseDone)
+	}()
+
+	// A broken implementation can run UNSUBSCRIBE before the blocked SUBSCRIBE
+	// finishes, leaving Redis subscribed even though the local ref count is zero.
+	select {
+	case <-transport.unsubscribeCalled:
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(transport.allowSubscribe)
+
+	select {
+	case <-acquireDone:
+	case <-time.After(time.Second):
+		t.Fatal("clusterAcquire did not finish")
+	}
+	select {
+	case <-releaseDone:
+	case <-time.After(time.Second):
+		t.Fatal("clusterRelease did not finish")
+	}
+
+	if transport.isSubscribed() {
+		t.Fatal("transport remained subscribed after acquire/release ended at zero refs")
 	}
 }
