@@ -77,11 +77,11 @@ type goRedisClusterBackend struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu       sync.Mutex
-	pubsub   *redis.PubSub
-	messages chan redisClusterMessage
-	closed   bool
-	wg       sync.WaitGroup
+	mu        sync.Mutex
+	pubsub    *redis.PubSub
+	messages  chan redisClusterMessage
+	closed    bool
+	wg        sync.WaitGroup
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -107,12 +107,10 @@ func (b *goRedisClusterBackend) Subscribe(topic string) error {
 		return errors.New("aqi cluster: redis pubsub is closed")
 	}
 	if b.pubsub == nil {
+		// Client.Subscribe deliberately keeps the subscription set even when the
+		// initial network write fails. go-redis then reconnects and resubscribes
+		// from that set, so AQI should not wait for an ACK or invent its own retry.
 		pubsub := b.client.Subscribe(b.ctx, topic)
-		if _, err := pubsub.Receive(b.ctx); err != nil {
-			_ = pubsub.Close()
-			b.mu.Unlock()
-			return err
-		}
 		b.pubsub = pubsub
 		b.wg.Add(1)
 		go b.receive(pubsub)
