@@ -14,7 +14,22 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Test ws
-        run: go test ./ws -count=1
-      - name: Race ws
-        run: go test -race ./ws -count=1
+      - name: Format
+        run: |
+          files=(
+            ws/cluster.go
+            ws/cluster_delivery_test.go
+            ws/cluster_topic_test.go
+            ws/cluster_user_test.go
+            ws/hubc.go
+            ws/pubsub.go
+            ws/user.go
+          )
+          unformatted="$(gofmt -l "${files[@]}")"
+          test -z "$unformatted" || { echo "Unformatted files:"; echo "$unformatted"; exit 1; }
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./... -count=1
+      - name: Race
+        run: go test -race ./... -count=1
