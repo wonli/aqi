@@ -1,0 +1,24 @@
+name: cluster-refactor-ci
+
+on:
+  push:
+    branches:
+      - feature/cluster-pubsub
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Format
+        run: test -z "$(gofmt -l ws/cluster*.go ws/pubsub.go ws/user.go ws/hubc.go app.go options.go)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./... -count=1
+      - name: Race
+        run: go test -race ./... -count=1
