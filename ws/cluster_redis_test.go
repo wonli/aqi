@@ -2,6 +2,7 @@ package ws
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -9,6 +10,11 @@ import (
 
 	"github.com/redis/go-redis/v9"
 )
+
+type redisClusterMessage struct {
+	topic string
+	data  []byte
+}
 
 type fakeRedisClusterBackend struct {
 	mu           sync.Mutex
@@ -30,7 +36,7 @@ func newFakeRedisClusterBackend() *fakeRedisClusterBackend {
 	}
 }
 
-func (f *fakeRedisClusterBackend) Subscribe(topic string) error {
+func (f *fakeRedisClusterBackend) Subscribe(_ context.Context, topic string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.closed {
@@ -41,7 +47,7 @@ func (f *fakeRedisClusterBackend) Subscribe(topic string) error {
 	return nil
 }
 
-func (f *fakeRedisClusterBackend) Unsubscribe(topic string) error {
+func (f *fakeRedisClusterBackend) Unsubscribe(_ context.Context, topic string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.closed {
@@ -52,7 +58,7 @@ func (f *fakeRedisClusterBackend) Unsubscribe(topic string) error {
 	return nil
 }
 
-func (f *fakeRedisClusterBackend) Publish(topic string, data []byte) error {
+func (f *fakeRedisClusterBackend) Publish(ctx context.Context, topic string, data []byte) error {
 	f.mu.Lock()
 	if f.closed {
 		f.mu.Unlock()
@@ -62,13 +68,25 @@ func (f *fakeRedisClusterBackend) Publish(topic string, data []byte) error {
 	subscribed := f.subscribed[topic]
 	f.mu.Unlock()
 	if subscribed {
-		f.messages <- redisClusterMessage{topic: topic, data: append([]byte(nil), data...)}
+		select {
+		case f.messages <- redisClusterMessage{topic: topic, data: append([]byte(nil), data...)}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	return nil
 }
 
-func (f *fakeRedisClusterBackend) Messages() <-chan redisClusterMessage {
-	return f.messages
+func (f *fakeRedisClusterBackend) Receive(ctx context.Context) (string, []byte, error) {
+	select {
+	case msg, ok := <-f.messages:
+		if !ok {
+			return "", nil, errors.New("closed")
+		}
+		return msg.topic, msg.data, nil
+	case <-ctx.Done():
+		return "", nil, ctx.Err()
+	}
 }
 
 func (f *fakeRedisClusterBackend) Close() error {
@@ -198,7 +216,7 @@ func TestGoRedisClusterFirstSubscribeKeepsIntentDuringOutage(t *testing.T) {
 	backend := newGoRedisClusterBackend(client)
 	t.Cleanup(func() { _ = backend.Close() })
 
-	if err := backend.Subscribe("room:1"); err != nil {
+	if err := backend.Subscribe(context.Background(), "room:1"); err != nil {
 		t.Fatalf("first subscribe should retain intent for go-redis reconnect, got %v", err)
 	}
 
