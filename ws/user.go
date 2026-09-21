@@ -72,7 +72,7 @@ func (u *User) unsubscribeTopic(topicId string) (int, bool) {
 		topic.RemoveSubUser(u.Suid)
 	}
 	if online {
-		clusterRelease(topicId)
+		clusterRelease(clusterTopicChannel(topicId))
 	}
 	return remaining, true
 }
@@ -98,7 +98,7 @@ func (u *User) UnsubAllTopics() int {
 	for _, topic := range topics {
 		topic.RemoveSubUser(u.Suid)
 		if online {
-			clusterRelease(topic.Id)
+			clusterRelease(clusterTopicChannel(topic.Id))
 		}
 	}
 
@@ -166,9 +166,9 @@ func (u *User) appLogin(appId string, client *Client) error {
 	u.Unlock()
 
 	if becameOnline {
-		clusterAcquire(clusterUserTopic(u.Suid))
+		clusterAcquire(clusterUserChannel(u.Suid))
 		for _, topicID := range retainedTopics {
-			clusterAcquire(topicID)
+			clusterAcquire(clusterTopicChannel(topicID))
 		}
 	}
 
@@ -199,9 +199,9 @@ func (u *User) appLogout(appId string, logoutClient *Client) error {
 	u.Unlock()
 
 	if becameOffline {
-		clusterRelease(clusterUserTopic(u.Suid))
+		clusterRelease(clusterUserChannel(u.Suid))
 		for _, topicID := range retainedTopics {
-			clusterRelease(topicID)
+			clusterRelease(clusterTopicChannel(topicID))
 		}
 	}
 
