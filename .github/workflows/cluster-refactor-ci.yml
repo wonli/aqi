@@ -15,10 +15,10 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Format
-        run: test -z "$(gofmt -l ws/cluster*.go ws/pubsub.go ws/pubsub_topic.go ws/user.go)"
-      - name: Vet ws
-        run: go vet ./ws
-      - name: Test ws
-        run: go test ./ws -count=1
-      - name: Race ws
-        run: go test -race ./ws -count=1
+        run: test -z "$(gofmt -l app.go options.go cluster_option_test.go ws/cluster*.go ws/hubc.go ws/pubsub.go ws/pubsub_topic.go ws/user.go)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./... -count=1
+      - name: Race
+        run: go test -race ./... -count=1
