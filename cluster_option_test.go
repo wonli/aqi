@@ -1,11 +1,19 @@
 package aqi
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
 )
+
+type testClusterTransport struct{}
+
+func (testClusterTransport) Subscribe(string) error           { return nil }
+func (testClusterTransport) Unsubscribe(string) error         { return nil }
+func (testClusterTransport) Publish(string, []byte) error     { return nil }
+func (testClusterTransport) Close() error                     { return nil }
 
 func TestClusterOptionOnlyEnablesCapability(t *testing.T) {
 	config := &AppConfig{}
@@ -17,12 +25,59 @@ func TestClusterOptionOnlyEnablesCapability(t *testing.T) {
 	}
 }
 
+func TestWithClusterTransportEnablesClusterAndStoresFactory(t *testing.T) {
+	factory := func(handler ClusterMessageHandler) (ClusterTransport, error) {
+		if handler == nil {
+			t.Fatal("custom cluster transport factory received nil handler")
+		}
+		return testClusterTransport{}, nil
+	}
+
+	config := &AppConfig{}
+	if err := WithClusterTransport(factory)(config); err != nil {
+		t.Fatal(err)
+	}
+	if !config.Cluster {
+		t.Fatal("WithClusterTransport did not enable cluster mode")
+	}
+	if config.ClusterTransportFactory == nil {
+		t.Fatal("WithClusterTransport did not retain factory")
+	}
+}
+
+func TestWithClusterTransportRejectsNilFactory(t *testing.T) {
+	if err := WithClusterTransport(nil)(&AppConfig{}); err == nil {
+		t.Fatal("WithClusterTransport accepted nil factory")
+	}
+}
+
 func TestClusterBootstrapDisabledRequiresNoRedis(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 
 	if err := bootstrapCluster(&AppConfig{}); err != nil {
 		t.Fatalf("disabled cluster bootstrap returned error: %v", err)
+	}
+}
+
+func TestClusterBootstrapCustomTransportBypassesRedisAQI(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	sentinel := errors.New("custom transport factory invoked")
+	config := &AppConfig{
+		Cluster: true,
+		ClusterTransportFactory: func(handler ClusterMessageHandler) (ClusterTransport, error) {
+			if handler == nil {
+				t.Fatal("custom cluster transport factory received nil handler")
+			}
+			return nil, sentinel
+		},
+	}
+
+	err := bootstrapCluster(config)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("custom cluster bootstrap error = %v, want wrapped sentinel", err)
 	}
 }
 
