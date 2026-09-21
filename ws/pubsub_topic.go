@@ -6,24 +6,39 @@ import (
 )
 
 type Topic struct {
-    Id          string   //订阅主题ID
-    PubSub      *PubSub  //关联PubSub
-    SubUsers    sync.Map //SubUsers map[string]*time.Time //订阅用户uniqueId和订阅时间
-    SubHandlers sync.Map //SubHandlers map[string]func(msg *TopicMsg) //内部组件间通知
+	Id          string   //订阅主题ID
+	PubSub      *PubSub  //关联PubSub
+	SubUsers    sync.Map //SubUsers map[string]*time.Time //订阅用户uniqueId和订阅时间
+	SubHandlers sync.Map //SubHandlers map[string]func(msg *TopicMsg) //内部组件间通知
 }
 
+func (a *Topic) addSubUser(user *User) (bool, bool) {
+	if user == nil {
+		return false, false
+	}
+
+	_, loaded := a.SubUsers.LoadOrStore(user.Suid, time.Now())
+	_, online := user.addSubTopic(a)
+	return !loaded, online
+}
+
+// AddSubUser preserves the existing public API; cluster transition details stay internal.
 func (a *Topic) AddSubUser(user *User) {
-	user.AddSubTopic(a)
-	a.SubUsers.LoadOrStore(user.Suid, time.Now())
+	a.addSubUser(user)
 }
 
 func (a *Topic) AddSubHandle(f func(msg *TopicMsg)) {
-    a.SubHandlers.LoadOrStore(a.Id, f)
+	a.SubHandlers.LoadOrStore(a.Id, f)
+}
+
+func (a *Topic) removeSubUser(suid string) bool {
+	_, loaded := a.SubUsers.LoadAndDelete(suid)
+	return loaded
 }
 
 // RemoveSubUser 从主题订阅集合中移除指定用户
 func (a *Topic) RemoveSubUser(suid string) {
-    a.SubUsers.Delete(suid)
+	a.removeSubUser(suid)
 }
 
 func (a *Topic) SendToSubUser(msg *TopicMsg) {

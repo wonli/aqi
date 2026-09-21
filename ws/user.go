@@ -47,41 +47,76 @@ func NewUser(uid string) *User {
 	return user
 }
 
-func (u *User) AddSubTopic(topic *Topic) int {
+func (u *User) addSubTopic(topic *Topic) (int, bool) {
 	u.Lock()
 	defer u.Unlock()
 
 	u.SubTopics[topic.Id] = topic
-	return len(u.SubTopics)
+	return len(u.SubTopics), len(u.AppClients) > 0
+}
+
+func (u *User) AddSubTopic(topic *Topic) int {
+	count, _ := u.addSubTopic(topic)
+	return count
+}
+
+func (u *User) unsubscribeTopic(topicId string) (int, bool) {
+	u.Lock()
+	topic, ok := u.SubTopics[topicId]
+	online := len(u.AppClients) > 0
+	if ok {
+		delete(u.SubTopics, topicId)
+	}
+	remaining := len(u.SubTopics)
+	u.Unlock()
+
+	if !ok {
+		return remaining, false
+	}
+	if topic != nil {
+		topic.RemoveSubUser(u.Suid)
+	}
+	if online && clusterEnabled() {
+		clusterRelease(clusterTopicChannel(topicId))
+	}
+	return remaining, true
 }
 
 func (u *User) UnsubTopic(topicId string) int {
-	u.Lock()
-	defer u.Unlock()
-
-	topic, ok := u.SubTopics[topicId]
-	if ok {
-		if topic != nil {
-			topic.RemoveSubUser(u.Suid)
-		}
-		delete(u.SubTopics, topicId)
-	}
-
-	return len(u.SubTopics)
+	remaining, _ := u.unsubscribeTopic(topicId)
+	return remaining
 }
 
 func (u *User) UnsubAllTopics() int {
 	u.Lock()
-	defer u.Unlock()
-
+	online := len(u.AppClients) > 0
+	topics := make([]*Topic, 0, len(u.SubTopics))
 	for topicId, topic := range u.SubTopics {
 		if topic != nil {
-			topic.RemoveSubUser(u.Suid)
+			topics = append(topics, topic)
 		}
 		delete(u.SubTopics, topicId)
 	}
+	remaining := len(u.SubTopics)
+	u.Unlock()
 
-	return len(u.SubTopics)
+	distributed := online && clusterEnabled()
+	for _, topic := range topics {
+		topic.RemoveSubUser(u.Suid)
+		if distributed {
+			clusterRelease(clusterTopicChannel(topic.Id))
+		}
+	}
+
+	return remaining
+}
+
+func (u *User) subTopicIDsLocked() []string {
+	topics := make([]string, 0, len(u.SubTopics))
+	for topicID := range u.SubTopics {
+		topics = append(topics, topicID)
+	}
+	return topics
 }
 
 // SetLastHeartbeat updates the user's latest client heartbeat time.
@@ -107,47 +142,91 @@ func (u *User) LastHeartbeat() time.Time {
 // AppLogin 用户APP客户端登录
 func (u *User) appLogin(appId string, client *Client) error {
 	var replacedClient *Client
+	distributed := clusterEnabled()
 
 	u.Lock()
+	wasOffline := len(u.AppClients) == 0
+	matchedApp := false
 	for i, app := range u.AppClients {
 		_, existingAppId, _ := app.LoginState()
-		if existingAppId == appId {
-			if app.Conn != client.Conn {
-				replacedClient = app
-				u.AppClients = slices.Delete(u.AppClients, i, i+1)
-				u.AppClients = append(u.AppClients, client)
-			}
+		if existingAppId != appId {
+			continue
+		}
 
-			client.setLoginState(u, appId)
-			u.Unlock()
+		matchedApp = true
+		if app.Conn != client.Conn {
+			replacedClient = app
+			u.AppClients = slices.Delete(u.AppClients, i, i+1)
+			u.AppClients = append(u.AppClients, client)
+		}
+		break
+	}
+	if !matchedApp {
+		u.AppClients = append(u.AppClients, client)
+	}
+	client.setLoginState(u, appId)
+	becameOnline := wasOffline && len(u.AppClients) > 0
+	var retainedTopics []string
+	if distributed && becameOnline {
+		retainedTopics = u.subTopicIDsLocked()
+	}
+	u.Unlock()
 
-			if replacedClient != nil {
-				replacedClient.Disconnect()
+	if distributed && becameOnline {
+		userChannel := clusterUserChannel(u.Suid)
+		clusterAcquire(userChannel)
+		if !u.IsOnline() {
+			clusterRelease(userChannel)
+		}
+
+		for _, topicID := range retainedTopics {
+			topicChannel := clusterTopicChannel(topicID)
+			clusterAcquire(topicChannel)
+
+			u.RLock()
+			_, stillSubscribed := u.SubTopics[topicID]
+			stillOnline := len(u.AppClients) > 0
+			u.RUnlock()
+			if !stillSubscribed || !stillOnline {
+				clusterRelease(topicChannel)
 			}
-			u.Hub.PubSub.Pub("login", u)
-			return nil
 		}
 	}
 
-	client.setLoginState(u, appId)
-	u.AppClients = append(u.AppClients, client)
-	u.Unlock()
-
+	if replacedClient != nil {
+		replacedClient.Disconnect()
+	}
 	u.Hub.PubSub.Pub("login", u)
 	return nil
 }
 
 // app退出
 func (u *User) appLogout(appId string, logoutClient *Client) error {
+	distributed := clusterEnabled()
+
 	u.Lock()
+	removed := false
 	for appIndex, appClient := range u.AppClients {
 		_, existingAppId, _ := appClient.LoginState()
 		if existingAppId == appId && logoutClient.Conn == appClient.Conn {
 			u.AppClients = slices.Delete(u.AppClients, appIndex, appIndex+1)
+			removed = true
 			break
 		}
 	}
+	becameOffline := removed && len(u.AppClients) == 0
+	var retainedTopics []string
+	if distributed && becameOffline {
+		retainedTopics = u.subTopicIDsLocked()
+	}
 	u.Unlock()
+
+	if distributed && becameOffline {
+		clusterRelease(clusterUserChannel(u.Suid))
+		for _, topicID := range retainedTopics {
+			clusterRelease(clusterTopicChannel(topicID))
+		}
+	}
 
 	u.Hub.PubSub.Pub("logout", u)
 	return nil
