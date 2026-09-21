@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
-	"github.com/wonli/aqi/ws"
 )
 
 func TestClusterOptionOnlyEnablesCapability(t *testing.T) {
@@ -21,8 +20,6 @@ func TestClusterOptionOnlyEnablesCapability(t *testing.T) {
 func TestClusterBootstrapDisabledRequiresNoRedis(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	ws.CloseCluster()
-	t.Cleanup(ws.CloseCluster)
 
 	if err := bootstrapCluster(&AppConfig{}); err != nil {
 		t.Fatalf("disabled cluster bootstrap returned error: %v", err)
@@ -32,8 +29,6 @@ func TestClusterBootstrapDisabledRequiresNoRedis(t *testing.T) {
 func TestClusterBootstrapRequiresRedisAQI(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	ws.CloseCluster()
-	t.Cleanup(ws.CloseCluster)
 
 	err := bootstrapCluster(&AppConfig{Cluster: true})
 	if err == nil {
@@ -47,8 +42,6 @@ func TestClusterBootstrapRequiresRedisAQI(t *testing.T) {
 func TestClusterBootstrapRejectsUnusableRedis(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	ws.CloseCluster()
-	t.Cleanup(ws.CloseCluster)
 
 	viper.Set("redis.aqi.addr", "127.0.0.1:1")
 	err := bootstrapCluster(&AppConfig{Cluster: true})
