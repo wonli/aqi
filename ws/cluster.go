@@ -2,6 +2,8 @@ package ws
 
 import (
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,15 +18,26 @@ const (
 	clusterTopicLockCount = 64
 )
 
-type clusterTransport interface {
-	Subscribe(topic string) error
-	Unsubscribe(topic string) error
-	Publish(topic string, data []byte) error
+// ClusterTransport is the minimal transport contract AQI needs for inter-node routing.
+// Channel names and payload bytes are opaque to the transport and must be preserved.
+type ClusterTransport interface {
+	Subscribe(channel string) error
+	Unsubscribe(channel string) error
+	Publish(channel string, data []byte) error
 	Close() error
 }
 
+// ClusterMessageHandler accepts one raw message received from the transport.
+// Custom transports receive this handler from ClusterTransportFactory and call it
+// with the exact channel and payload previously published by another AQI node.
+type ClusterMessageHandler func(channel string, data []byte)
+
+// ClusterTransportFactory builds a transport after AQI configuration has loaded.
+// The supplied handler is the transport's inbound path back into AQI.
+type ClusterTransportFactory func(ClusterMessageHandler) (ClusterTransport, error)
+
 type clusterRuntime struct {
-	transport  clusterTransport
+	transport  ClusterTransport
 	instanceID [clusterInstanceIDSize]byte
 
 	refsMu sync.Mutex
@@ -55,28 +68,58 @@ func clusterTopicChannel(topicID string) string {
 	return clusterTopicPrefix + topicID
 }
 
-func newClusterInstanceID() [clusterInstanceIDSize]byte {
+func newClusterInstanceID() ([clusterInstanceIDSize]byte, error) {
 	var id [clusterInstanceIDSize]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		panic("aqi: cannot generate cluster instance id: " + err.Error())
-	}
-	return id
+	_, err := rand.Read(id[:])
+	return id, err
 }
 
-func setClusterTransport(t clusterTransport) {
-	if t == nil {
-		clearClusterTransport()
-		return
-	}
-
+func installClusterTransport(t ClusterTransport, instanceID [clusterInstanceIDSize]byte) {
 	next := &clusterRuntime{
 		transport:  t,
-		instanceID: newClusterInstanceID(),
+		instanceID: instanceID,
 		refs:       make(map[string]int),
 	}
 	if old := clusterState.Swap(next); old != nil {
 		_ = old.transport.Close()
 	}
+}
+
+// InitClusterTransport creates and installs AQI's process-wide cluster transport.
+// It is intended to be called once during AQI startup.
+func InitClusterTransport(factory ClusterTransportFactory) error {
+	if factory == nil {
+		return errors.New("aqi cluster: transport factory is nil")
+	}
+
+	transport, err := factory(clusterHandleInbound)
+	if err != nil {
+		return err
+	}
+	if transport == nil {
+		return errors.New("aqi cluster: transport factory returned nil transport")
+	}
+
+	instanceID, err := newClusterInstanceID()
+	if err != nil {
+		_ = transport.Close()
+		return fmt.Errorf("aqi cluster: cannot generate instance id: %w", err)
+	}
+	installClusterTransport(transport, instanceID)
+	return nil
+}
+
+// setClusterTransport is a compact test helper for installing fake transports.
+func setClusterTransport(t ClusterTransport) {
+	if t == nil {
+		clearClusterTransport()
+		return
+	}
+	instanceID, err := newClusterInstanceID()
+	if err != nil {
+		panic("aqi: cannot generate cluster instance id: " + err.Error())
+	}
+	installClusterTransport(t, instanceID)
 }
 
 func clearClusterTransport() {
