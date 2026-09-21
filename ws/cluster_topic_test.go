@@ -24,16 +24,16 @@ func TestClusterTopicUsesNodeLevelReferenceCounts(t *testing.T) {
 	first := newTopicTestUser("A", true)
 	second := newTopicTestUser("B", true)
 
-	pubsub.Sub("room:1", first)
-	pubsub.Sub("room:1", first)
-	pubsub.Sub("room:1", second)
+	pubsub.subscribe("room:1", first)
+	pubsub.subscribe("room:1", first)
+	pubsub.subscribe("room:1", second)
 
 	subs, unsubs, _ := transport.counts("room:1")
 	if subs != 1 || unsubs != 0 {
 		t.Fatalf("after subscriptions = %d/%d, want 1/0", subs, unsubs)
 	}
 
-	if !pubsub.Unsub("room:1", first) {
+	if !pubsub.unsubscribe("room:1", first) {
 		t.Fatal("first user's unsubscribe did not report a transition")
 	}
 	_, unsubs, _ = transport.counts("room:1")
@@ -41,7 +41,7 @@ func TestClusterTopicUsesNodeLevelReferenceCounts(t *testing.T) {
 		t.Fatalf("unsubscribe after one of two users = %d, want 0", unsubs)
 	}
 
-	if pubsub.Unsub("room:1", first) {
+	if pubsub.unsubscribe("room:1", first) {
 		t.Fatal("duplicate unsubscribe reported a transition")
 	}
 	_, unsubs, _ = transport.counts("room:1")
@@ -49,7 +49,7 @@ func TestClusterTopicUsesNodeLevelReferenceCounts(t *testing.T) {
 		t.Fatalf("duplicate unsubscribe changed transport count to %d", unsubs)
 	}
 
-	if !pubsub.Unsub("room:1", second) {
+	if !pubsub.unsubscribe("room:1", second) {
 		t.Fatal("last user's unsubscribe did not report a transition")
 	}
 	_, unsubs, _ = transport.counts("room:1")
