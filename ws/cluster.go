@@ -41,6 +41,10 @@ var clusterState = struct {
 // unrelated topics behind one global network lock.
 var clusterTopicLocks [clusterTopicLockCount]sync.Mutex
 
+func clusterEnabled() bool {
+	return clusterActive.Load()
+}
+
 func clusterTopicMutex(topic string) *sync.Mutex {
 	var hash uint32 = 2166136261
 	for i := 0; i < len(topic); i++ {
@@ -103,7 +107,7 @@ func clearClusterTransport() {
 }
 
 func clusterAcquire(topic string) {
-	if topic == "" || !clusterActive.Load() {
+	if topic == "" || !clusterEnabled() {
 		return
 	}
 
@@ -129,7 +133,7 @@ func clusterAcquire(topic string) {
 }
 
 func clusterRelease(topic string) {
-	if topic == "" || !clusterActive.Load() {
+	if topic == "" || !clusterEnabled() {
 		return
 	}
 
@@ -166,7 +170,7 @@ func clusterRelease(topic string) {
 }
 
 func clusterPublish(topic string, data []byte) bool {
-	if topic == "" || !clusterActive.Load() {
+	if topic == "" || !clusterEnabled() {
 		return false
 	}
 
@@ -208,7 +212,7 @@ func clusterDecodeWire(wire []byte) ([clusterInstanceIDSize]byte, []byte, bool) 
 }
 
 func clusterHandleInbound(channel string, wire []byte) {
-	if !clusterActive.Load() {
+	if !clusterEnabled() {
 		return
 	}
 
