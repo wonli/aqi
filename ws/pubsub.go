@@ -57,8 +57,8 @@ func (a *PubSub) Pub(topicId string, data any) bool {
 // 可靠存储仍由业务层负责。
 func (a *PubSub) Publish(topicId string, data any) bool {
 	msg := a.topicMsg(topicId, data)
-	local := a.enqueue(msg)
 	encoded := msg.encode()
+	local := a.enqueue(msg)
 	remote := encoded != nil && clusterPublish(topicId, encoded)
 	return local || remote
 }
