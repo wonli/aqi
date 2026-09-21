@@ -55,31 +55,36 @@ func (u *User) AddSubTopic(topic *Topic) int {
 	return len(u.SubTopics)
 }
 
-func (u *User) removeSubTopic(topicId string) (*Topic, bool) {
+func (u *User) unsubscribeTopic(topicId string) (int, bool) {
 	u.Lock()
-	defer u.Unlock()
-
 	topic, ok := u.SubTopics[topicId]
-	if !ok {
-		return nil, false
+	online := len(u.AppClients) > 0
+	if ok {
+		delete(u.SubTopics, topicId)
 	}
-	delete(u.SubTopics, topicId)
-	return topic, true
+	remaining := len(u.SubTopics)
+	u.Unlock()
+
+	if !ok {
+		return remaining, false
+	}
+	if topic != nil {
+		topic.RemoveSubUser(u.Suid)
+	}
+	if online {
+		clusterRelease(topicId)
+	}
+	return remaining, true
 }
 
 func (u *User) UnsubTopic(topicId string) int {
-	topic, removed := u.removeSubTopic(topicId)
-	if removed && topic != nil {
-		topic.RemoveSubUser(u.Suid)
-	}
-
-	u.RLock()
-	defer u.RUnlock()
-	return len(u.SubTopics)
+	remaining, _ := u.unsubscribeTopic(topicId)
+	return remaining
 }
 
 func (u *User) UnsubAllTopics() int {
 	u.Lock()
+	online := len(u.AppClients) > 0
 	topics := make([]*Topic, 0, len(u.SubTopics))
 	for topicId, topic := range u.SubTopics {
 		if topic != nil {
@@ -92,6 +97,9 @@ func (u *User) UnsubAllTopics() int {
 
 	for _, topic := range topics {
 		topic.RemoveSubUser(u.Suid)
+		if online {
+			clusterRelease(topic.Id)
+		}
 	}
 
 	return remaining
