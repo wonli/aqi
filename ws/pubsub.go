@@ -103,17 +103,8 @@ func (a *PubSub) Unsub(topicId string, user *User) bool {
 		return false
 	}
 
-	topic, removed := user.removeSubTopic(topicId)
-	if !removed {
-		return false
-	}
-	if topic != nil {
-		topic.RemoveSubUser(user.Suid)
-	}
-	if user.IsOnline() {
-		clusterRelease(topicId)
-	}
-	return true
+	_, removed := user.unsubscribeTopic(topicId)
+	return removed
 }
 
 func (a *PubSub) Start() {
