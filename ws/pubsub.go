@@ -79,17 +79,21 @@ func (a *PubSub) deliverCluster(topicId string, data []byte) bool {
 	return true
 }
 
-// Sub 订阅主题。返回值表示是否新增了用户/主题订阅关系。
-func (a *PubSub) Sub(topicId string, user *User) bool {
+func (a *PubSub) subscribe(topicId string, user *User) bool {
 	if user == nil {
 		return false
 	}
 
-	added := a.initTopic(topicId).AddSubUser(user)
+	added := a.initTopic(topicId).addSubUser(user)
 	if added && user.IsOnline() {
 		clusterAcquire(topicId)
 	}
 	return added
+}
+
+// Sub 订阅主题
+func (a *PubSub) Sub(topicId string, user *User) {
+	a.subscribe(topicId, user)
 }
 
 // SubFunc 以函数方式订阅
@@ -97,14 +101,18 @@ func (a *PubSub) SubFunc(topicId string, f func(msg *TopicMsg)) {
 	a.initTopic(topicId).AddSubHandle(f)
 }
 
-// Unsub 取消订阅主题。返回值表示订阅关系是否实际发生了移除。
-func (a *PubSub) Unsub(topicId string, user *User) bool {
+func (a *PubSub) unsubscribe(topicId string, user *User) bool {
 	if user == nil {
 		return false
 	}
 
 	_, removed := user.unsubscribeTopic(topicId)
 	return removed
+}
+
+// Unsub 取消订阅主题
+func (a *PubSub) Unsub(topicId string, user *User) {
+	a.unsubscribe(topicId, user)
 }
 
 func (a *PubSub) Start() {
