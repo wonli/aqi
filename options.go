@@ -141,7 +141,7 @@ func WithClusterTransport(factory ClusterTransportFactory) Option {
 			return errors.New("aqi cluster: transport factory is nil")
 		}
 		config.Cluster = true
-		config.ClusterTransportFactory = factory
+		config.clusterTransportFactory = factory
 		return nil
 	}
 }
