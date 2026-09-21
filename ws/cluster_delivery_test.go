@@ -65,8 +65,8 @@ func addClusterDeliveryUser(h *Hubc, uid string) (*User, *Client) {
 
 func remoteClusterWire(t *testing.T, data []byte) []byte {
 	t.Helper()
-	remote := [clusterNodeIDSize]byte{1}
-	if remote == clusterCurrentNodeID() {
+	remote := [clusterInstanceIDSize]byte{1}
+	if remote == clusterCurrentInstanceID() {
 		remote[0] = 2
 	}
 	return clusterEncodeWire(remote, data)
