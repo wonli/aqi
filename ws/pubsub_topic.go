@@ -12,14 +12,14 @@ type Topic struct {
 	SubHandlers sync.Map //SubHandlers map[string]func(msg *TopicMsg) //内部组件间通知
 }
 
-func (a *Topic) addSubUser(user *User) bool {
+func (a *Topic) addSubUser(user *User) (bool, bool) {
 	if user == nil {
-		return false
+		return false, false
 	}
 
 	_, loaded := a.SubUsers.LoadOrStore(user.Suid, time.Now())
-	user.AddSubTopic(a)
-	return !loaded
+	_, online := user.addSubTopic(a)
+	return !loaded, online
 }
 
 // AddSubUser preserves the existing public API; cluster transition details stay internal.
