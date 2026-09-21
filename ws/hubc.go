@@ -163,12 +163,29 @@ func (h *Hubc) broadcastAction(action *Action) {
 }
 
 func (h *Hubc) User(uid string) *User {
+	if h == nil || h.Users == nil {
+		return nil
+	}
 	user, ok := h.Users.Load(uid)
 	if ok {
 		return user.(*User)
 	}
 
 	return nil
+}
+
+func (h *Hubc) SendToUser(uid string, msg []byte) bool {
+	if h == nil || uid == "" {
+		return false
+	}
+
+	local := false
+	if user := h.User(uid); user != nil && user.IsOnline() {
+		user.SendMsg(msg)
+		local = true
+	}
+	remote := clusterPublish(clusterUserTopic(uid), msg)
+	return local || remote
 }
 
 func (h *Hubc) UserClient(uid, appId string) *Client {
