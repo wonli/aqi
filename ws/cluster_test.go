@@ -58,6 +58,40 @@ func (f *fakeClusterTransport) counts(topic string) (int, int, int) {
 	return f.subscribes[topic], f.unsubscribes[topic], f.publishes[topic]
 }
 
+func TestInitClusterTransportRejectsSecondInitialization(t *testing.T) {
+	clearClusterTransport()
+	t.Cleanup(clearClusterTransport)
+
+	first := newFakeClusterTransport()
+	if err := InitClusterTransport(func(handler ClusterMessageHandler) (ClusterTransport, error) {
+		if handler == nil {
+			t.Fatal("first factory received nil handler")
+		}
+		return first, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	secondFactoryCalled := false
+	err := InitClusterTransport(func(ClusterMessageHandler) (ClusterTransport, error) {
+		secondFactoryCalled = true
+		return newFakeClusterTransport(), nil
+	})
+	if err == nil {
+		t.Fatal("second cluster transport initialization succeeded")
+	}
+	if secondFactoryCalled {
+		t.Fatal("second cluster transport factory was called after cluster was already initialized")
+	}
+
+	first.mu.Lock()
+	closed := first.closed
+	first.mu.Unlock()
+	if closed != 0 {
+		t.Fatalf("first cluster transport closed during rejected reinitialization: %d", closed)
+	}
+}
+
 func TestClusterReferenceCountingUsesEdgeTransitions(t *testing.T) {
 	clearClusterTransport()
 	t.Cleanup(clearClusterTransport)
