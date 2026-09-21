@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/wonli/aqi/logger"
 )
@@ -20,6 +21,11 @@ type clusterTransport interface {
 	Publish(topic string, data []byte) error
 	Close() error
 }
+
+// clusterActive is fixed by cluster initialization during AQI startup in
+// normal operation. It exists only as a lock-free fast path for single-node
+// mode; transport/state ownership still lives in clusterState.
+var clusterActive atomic.Bool
 
 var clusterState = struct {
 	sync.Mutex
@@ -73,12 +79,17 @@ func setClusterTransport(t clusterTransport) {
 	clusterState.instanceID = instanceID
 	clusterState.Unlock()
 
+	clusterActive.Store(t != nil)
+
 	if old != nil {
 		_ = old.Close()
 	}
 }
 
 func clearClusterTransport() {
+	// Stop new hot-path operations before tearing down the transport.
+	clusterActive.Store(false)
+
 	clusterState.Lock()
 	old := clusterState.transport
 	clusterState.transport = nil
@@ -92,7 +103,7 @@ func clearClusterTransport() {
 }
 
 func clusterAcquire(topic string) {
-	if topic == "" {
+	if topic == "" || !clusterActive.Load() {
 		return
 	}
 
@@ -118,7 +129,7 @@ func clusterAcquire(topic string) {
 }
 
 func clusterRelease(topic string) {
-	if topic == "" {
+	if topic == "" || !clusterActive.Load() {
 		return
 	}
 
@@ -155,7 +166,7 @@ func clusterRelease(topic string) {
 }
 
 func clusterPublish(topic string, data []byte) bool {
-	if topic == "" {
+	if topic == "" || !clusterActive.Load() {
 		return false
 	}
 
@@ -197,16 +208,19 @@ func clusterDecodeWire(wire []byte) ([clusterInstanceIDSize]byte, []byte, bool) 
 }
 
 func clusterHandleInbound(channel string, wire []byte) {
+	if !clusterActive.Load() {
+		return
+	}
+
 	origin, data, ok := clusterDecodeWire(wire)
 	if !ok {
 		return
 	}
 
 	clusterState.Lock()
-	enabled := clusterState.transport != nil
 	instanceID := clusterState.instanceID
 	clusterState.Unlock()
-	if !enabled || bytes.Equal(origin[:], instanceID[:]) {
+	if bytes.Equal(origin[:], instanceID[:]) {
 		return
 	}
 
