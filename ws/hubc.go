@@ -184,7 +184,7 @@ func (h *Hubc) SendToUser(uid string, msg []byte) bool {
 		user.SendMsg(msg)
 		local = true
 	}
-	remote := clusterPublish(clusterUserTopic(uid), msg)
+	remote := clusterPublish(clusterUserChannel(uid), msg)
 	return local || remote
 }
 
