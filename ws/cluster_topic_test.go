@@ -28,7 +28,7 @@ func TestClusterTopicUsesNodeLevelReferenceCounts(t *testing.T) {
 	pubsub.subscribe("room:1", first)
 	pubsub.subscribe("room:1", second)
 
-	subs, unsubs, _ := transport.counts("room:1")
+	subs, unsubs, _ := transport.counts("$aqi:topic:room:1")
 	if subs != 1 || unsubs != 0 {
 		t.Fatalf("after subscriptions = %d/%d, want 1/0", subs, unsubs)
 	}
@@ -36,7 +36,7 @@ func TestClusterTopicUsesNodeLevelReferenceCounts(t *testing.T) {
 	if !pubsub.unsubscribe("room:1", first) {
 		t.Fatal("first user's unsubscribe did not report a transition")
 	}
-	_, unsubs, _ = transport.counts("room:1")
+	_, unsubs, _ = transport.counts("$aqi:topic:room:1")
 	if unsubs != 0 {
 		t.Fatalf("unsubscribe after one of two users = %d, want 0", unsubs)
 	}
@@ -44,7 +44,7 @@ func TestClusterTopicUsesNodeLevelReferenceCounts(t *testing.T) {
 	if pubsub.unsubscribe("room:1", first) {
 		t.Fatal("duplicate unsubscribe reported a transition")
 	}
-	_, unsubs, _ = transport.counts("room:1")
+	_, unsubs, _ = transport.counts("$aqi:topic:room:1")
 	if unsubs != 0 {
 		t.Fatalf("duplicate unsubscribe changed transport count to %d", unsubs)
 	}
@@ -52,7 +52,7 @@ func TestClusterTopicUsesNodeLevelReferenceCounts(t *testing.T) {
 	if !pubsub.unsubscribe("room:1", second) {
 		t.Fatal("last user's unsubscribe did not report a transition")
 	}
-	_, unsubs, _ = transport.counts("room:1")
+	_, unsubs, _ = transport.counts("$aqi:topic:room:1")
 	if unsubs != 1 {
 		t.Fatalf("last unsubscribe count = %d, want 1", unsubs)
 	}
@@ -68,7 +68,7 @@ func TestClusterTopicOfflineRetainedUserDoesNotHoldRedisRef(t *testing.T) {
 	user := newTopicTestUser("B", false)
 
 	pubsub.Sub("room:1", user)
-	subs, unsubs, _ := transport.counts("room:1")
+	subs, unsubs, _ := transport.counts("$aqi:topic:room:1")
 	if subs != 0 || unsubs != 0 {
 		t.Fatalf("offline subscription touched cluster = %d/%d, want 0/0", subs, unsubs)
 	}
@@ -90,7 +90,7 @@ func TestClusterTopicDirectUserUnsubReleasesOnlineRef(t *testing.T) {
 	if got := user.UnsubTopic("room:1"); got != 0 {
 		t.Fatalf("remaining user topics = %d, want 0", got)
 	}
-	_, unsubs, _ := transport.counts("room:1")
+	_, unsubs, _ := transport.counts("$aqi:topic:room:1")
 	if unsubs != 1 {
 		t.Fatalf("direct UnsubTopic unsubscribe count = %d, want 1", unsubs)
 	}
@@ -111,9 +111,25 @@ func TestClusterTopicDirectUnsubAllReleasesOnlineRefs(t *testing.T) {
 		t.Fatalf("remaining user topics = %d, want 0", got)
 	}
 	for _, topic := range []string{"room:1", "room:2"} {
-		_, unsubs, _ := transport.counts(topic)
+		_, unsubs, _ := transport.counts("$aqi:topic:" + topic)
 		if unsubs != 1 {
 			t.Fatalf("direct UnsubAllTopics %s unsubscribe count = %d, want 1", topic, unsubs)
 		}
+	}
+}
+
+func TestClusterTopicAllowsBusinessAQIPrefix(t *testing.T) {
+	clearClusterTransport()
+	t.Cleanup(clearClusterTransport)
+	transport := newFakeClusterTransport()
+	setClusterTransport(transport)
+
+	pubsub := NewPubSub()
+	user := newTopicTestUser("B", true)
+	pubsub.Sub("$aqi:user:B", user)
+
+	subs, _, _ := transport.counts("$aqi:topic:$aqi:user:B")
+	if subs != 1 {
+		t.Fatalf("business topic with $aqi prefix subscribed %d times, want 1", subs)
 	}
 }
