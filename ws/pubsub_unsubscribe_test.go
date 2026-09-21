@@ -14,7 +14,7 @@ func TestPubSubUnsubReportsOneMembershipTransition(t *testing.T) {
 	}
 	topic := topicValue.(*Topic)
 
-	if !pubsub.Unsub("room:1", user) {
+	if !pubsub.unsubscribe("room:1", user) {
 		t.Fatal("first unsubscribe should report a membership transition")
 	}
 	if _, ok := user.SubTopics["room:1"]; ok {
@@ -24,7 +24,7 @@ func TestPubSubUnsubReportsOneMembershipTransition(t *testing.T) {
 		t.Fatal("topic still contains user after unsubscribe")
 	}
 
-	if pubsub.Unsub("room:1", user) {
+	if pubsub.unsubscribe("room:1", user) {
 		t.Fatal("second unsubscribe should report no membership transition")
 	}
 }
