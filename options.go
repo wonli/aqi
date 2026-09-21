@@ -113,3 +113,11 @@ func Telemetry(provider telemetry.Provider) Option {
 		return nil
 	}
 }
+
+// WithCluster enables realtime multi-node routing using the reserved redis.aqi store.
+func WithCluster() Option {
+	return func(config *AppConfig) error {
+		config.Cluster = true
+		return nil
+	}
+}
