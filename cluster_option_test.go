@@ -10,10 +10,10 @@ import (
 
 type testClusterTransport struct{}
 
-func (testClusterTransport) Subscribe(string) error           { return nil }
-func (testClusterTransport) Unsubscribe(string) error         { return nil }
-func (testClusterTransport) Publish(string, []byte) error     { return nil }
-func (testClusterTransport) Close() error                     { return nil }
+func (testClusterTransport) Subscribe(string) error       { return nil }
+func (testClusterTransport) Unsubscribe(string) error     { return nil }
+func (testClusterTransport) Publish(string, []byte) error { return nil }
+func (testClusterTransport) Close() error                 { return nil }
 
 func TestClusterOptionOnlyEnablesCapability(t *testing.T) {
 	config := &AppConfig{}
