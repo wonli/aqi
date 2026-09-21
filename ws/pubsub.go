@@ -59,7 +59,7 @@ func (a *PubSub) Publish(topicId string, data any) bool {
 	msg := a.topicMsg(topicId, data)
 	encoded := msg.encode()
 	local := a.enqueue(msg)
-	remote := encoded != nil && clusterPublish(topicId, encoded)
+	remote := encoded != nil && clusterPublish(clusterTopicChannel(topicId), encoded)
 	return local || remote
 }
 
@@ -86,7 +86,7 @@ func (a *PubSub) subscribe(topicId string, user *User) bool {
 
 	added := a.initTopic(topicId).addSubUser(user)
 	if added && user.IsOnline() {
-		clusterAcquire(topicId)
+		clusterAcquire(clusterTopicChannel(topicId))
 	}
 	return added
 }
