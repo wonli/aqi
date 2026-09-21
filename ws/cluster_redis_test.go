@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type fakeRedisClusterBackend struct {
@@ -180,5 +182,30 @@ func TestRedisClusterCloseClosesBackend(t *testing.T) {
 func TestRedisClusterRejectsNilClient(t *testing.T) {
 	if _, err := newRedisCluster(nil, func(string, []byte) {}); err == nil {
 		t.Fatal("newRedisCluster accepted nil redis client")
+	}
+}
+
+func TestGoRedisClusterFirstSubscribeKeepsIntentDuringOutage(t *testing.T) {
+	client := redis.NewClient(&redis.Options{
+		Addr:         "127.0.0.1:1",
+		DialTimeout:  10 * time.Millisecond,
+		ReadTimeout:  10 * time.Millisecond,
+		WriteTimeout: 10 * time.Millisecond,
+		MaxRetries:   -1,
+	})
+	t.Cleanup(func() { _ = client.Close() })
+
+	backend := newGoRedisClusterBackend(client)
+	t.Cleanup(func() { _ = backend.Close() })
+
+	if err := backend.Subscribe("room:1"); err != nil {
+		t.Fatalf("first subscribe should retain intent for go-redis reconnect, got %v", err)
+	}
+
+	backend.mu.Lock()
+	pubsub := backend.pubsub
+	backend.mu.Unlock()
+	if pubsub == nil {
+		t.Fatal("first subscribe did not retain the go-redis PubSub")
 	}
 }
