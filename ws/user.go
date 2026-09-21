@@ -55,33 +55,46 @@ func (u *User) AddSubTopic(topic *Topic) int {
 	return len(u.SubTopics)
 }
 
-func (u *User) UnsubTopic(topicId string) int {
+func (u *User) removeSubTopic(topicId string) (*Topic, bool) {
 	u.Lock()
 	defer u.Unlock()
 
 	topic, ok := u.SubTopics[topicId]
-	if ok {
-		if topic != nil {
-			topic.RemoveSubUser(u.Suid)
-		}
-		delete(u.SubTopics, topicId)
+	if !ok {
+		return nil, false
+	}
+	delete(u.SubTopics, topicId)
+	return topic, true
+}
+
+func (u *User) UnsubTopic(topicId string) int {
+	topic, removed := u.removeSubTopic(topicId)
+	if removed && topic != nil {
+		topic.RemoveSubUser(u.Suid)
 	}
 
+	u.RLock()
+	defer u.RUnlock()
 	return len(u.SubTopics)
 }
 
 func (u *User) UnsubAllTopics() int {
 	u.Lock()
-	defer u.Unlock()
-
+	topics := make([]*Topic, 0, len(u.SubTopics))
 	for topicId, topic := range u.SubTopics {
 		if topic != nil {
-			topic.RemoveSubUser(u.Suid)
+			topics = append(topics, topic)
 		}
 		delete(u.SubTopics, topicId)
 	}
+	remaining := len(u.SubTopics)
+	u.Unlock()
 
-	return len(u.SubTopics)
+	for _, topic := range topics {
+		topic.RemoveSubUser(u.Suid)
+	}
+
+	return remaining
 }
 
 // SetLastHeartbeat updates the user's latest client heartbeat time.

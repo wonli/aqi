@@ -60,13 +60,20 @@ func (a *PubSub) SubFunc(topicId string, f func(msg *TopicMsg)) {
 	a.initTopic(topicId).AddSubHandle(f)
 }
 
-// Unsub 取消订阅主题
-func (a *PubSub) Unsub(topicId string, user *User) {
-	topic, ok := a.Topics.Load(topicId)
-	if ok {
-		topic.(*Topic).RemoveSubUser(user.Suid)
-		user.UnsubTopic(topicId)
+// Unsub 取消订阅主题。返回值表示订阅关系是否实际发生了移除。
+func (a *PubSub) Unsub(topicId string, user *User) bool {
+	if user == nil {
+		return false
 	}
+
+	topic, removed := user.removeSubTopic(topicId)
+	if !removed {
+		return false
+	}
+	if topic != nil {
+		topic.RemoveSubUser(user.Suid)
+	}
+	return true
 }
 
 func (a *PubSub) Start() {
