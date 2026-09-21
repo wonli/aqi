@@ -56,14 +56,14 @@ func (a *PubSub) Pub(topicId string, data any) bool {
 // Publish 发布到本机并将同一编码后的消息发送到其他 AQI 节点。
 // 可靠存储仍由业务层负责。
 func (a *PubSub) Publish(topicId string, data any) bool {
+	if !clusterEnabled() {
+		return a.Pub(topicId, data)
+	}
+
 	msg := a.topicMsg(topicId, data)
 	encoded := msg.encode()
 	local := a.enqueue(msg)
-
-	remote := false
-	if encoded != nil && clusterEnabled() {
-		remote = clusterPublish(clusterTopicChannel(topicId), encoded)
-	}
+	remote := encoded != nil && clusterPublish(clusterTopicChannel(topicId), encoded)
 	return local || remote
 }
 
@@ -89,7 +89,7 @@ func (a *PubSub) subscribe(topicId string, user *User) bool {
 	}
 
 	added := a.initTopic(topicId).addSubUser(user)
-	if added && user.IsOnline() && clusterEnabled() {
+	if added && clusterEnabled() && user.IsOnline() {
 		clusterAcquire(clusterTopicChannel(topicId))
 	}
 	return added
