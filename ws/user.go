@@ -137,6 +137,7 @@ func (u *User) LastHeartbeat() time.Time {
 // AppLogin 用户APP客户端登录
 func (u *User) appLogin(appId string, client *Client) error {
 	var replacedClient *Client
+	distributed := clusterEnabled()
 
 	u.Lock()
 	wasOffline := len(u.AppClients) == 0
@@ -161,15 +162,29 @@ func (u *User) appLogin(appId string, client *Client) error {
 	client.setLoginState(u, appId)
 	becameOnline := wasOffline && len(u.AppClients) > 0
 	var retainedTopics []string
-	if becameOnline {
+	if distributed && becameOnline {
 		retainedTopics = u.subTopicIDsLocked()
 	}
 	u.Unlock()
 
-	if becameOnline && clusterEnabled() {
-		clusterAcquire(clusterUserChannel(u.Suid))
+	if distributed && becameOnline {
+		userChannel := clusterUserChannel(u.Suid)
+		clusterAcquire(userChannel)
+		if !u.IsOnline() {
+			clusterRelease(userChannel)
+		}
+
 		for _, topicID := range retainedTopics {
-			clusterAcquire(clusterTopicChannel(topicID))
+			topicChannel := clusterTopicChannel(topicID)
+			clusterAcquire(topicChannel)
+
+			u.RLock()
+			_, stillSubscribed := u.SubTopics[topicID]
+			stillOnline := len(u.AppClients) > 0
+			u.RUnlock()
+			if !stillSubscribed || !stillOnline {
+				clusterRelease(topicChannel)
+			}
 		}
 	}
 
@@ -182,6 +197,8 @@ func (u *User) appLogin(appId string, client *Client) error {
 
 // app退出
 func (u *User) appLogout(appId string, logoutClient *Client) error {
+	distributed := clusterEnabled()
+
 	u.Lock()
 	removed := false
 	for appIndex, appClient := range u.AppClients {
@@ -194,12 +211,12 @@ func (u *User) appLogout(appId string, logoutClient *Client) error {
 	}
 	becameOffline := removed && len(u.AppClients) == 0
 	var retainedTopics []string
-	if becameOffline {
+	if distributed && becameOffline {
 		retainedTopics = u.subTopicIDsLocked()
 	}
 	u.Unlock()
 
-	if becameOffline && clusterEnabled() {
+	if distributed && becameOffline {
 		clusterRelease(clusterUserChannel(u.Suid))
 		for _, topicID := range retainedTopics {
 			clusterRelease(clusterTopicChannel(topicID))
