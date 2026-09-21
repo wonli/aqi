@@ -50,11 +50,12 @@ type AppConfig struct {
 
 	DefaultConfigHook func(*ConfigBuilder)
 
-	Guard                 ws.GuardFunc //守护回调
-	HttpServer            http.Handler //http server
-	WebSocketMaxFrameSize int64
-	Telemetry             telemetry.Provider
-	Cluster               bool
+	Guard                   ws.GuardFunc //守护回调
+	HttpServer              http.Handler //http server
+	WebSocketMaxFrameSize   int64
+	Telemetry               telemetry.Provider
+	Cluster                 bool
+	ClusterTransportFactory ClusterTransportFactory
 
 	RemoteProvider *RemoteProvider //远程配置支持etcd, consul
 
@@ -246,6 +247,12 @@ func bootstrapCluster(appConfig *AppConfig) error {
 	if appConfig == nil || !appConfig.Cluster {
 		return nil
 	}
+	if appConfig.ClusterTransportFactory != nil {
+		if err := ws.InitClusterTransport(appConfig.ClusterTransportFactory); err != nil {
+			return fmt.Errorf("AQI cluster transport initialization failed: %w", err)
+		}
+		return nil
+	}
 	if strings.TrimSpace(viper.GetString("redis.aqi.addr")) == "" {
 		return errors.New("AQI cluster enabled but redis.aqi is not configured")
 	}
@@ -260,7 +267,7 @@ func bootstrapCluster(appConfig *AppConfig) error {
 	if err := client.Ping(ctx).Err(); err != nil {
 		return fmt.Errorf("AQI cluster redis.aqi unavailable: %w", err)
 	}
-	if err := ws.InitCluster(client); err != nil {
+	if err := ws.InitRedisCluster(client); err != nil {
 		return fmt.Errorf("AQI cluster initialization failed: %w", err)
 	}
 	return nil
