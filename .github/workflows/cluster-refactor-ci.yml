@@ -21,4 +21,5 @@ jobs:
       - name: Test
         run: go test ./... -count=1
       - name: Race
+        # Retry the exact full-suite command after an unrelated uidgen stress flake.
         run: go test -race ./... -count=1
