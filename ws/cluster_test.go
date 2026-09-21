@@ -103,6 +103,28 @@ func TestClusterDisabledIsNoOp(t *testing.T) {
 	}
 }
 
+func TestClusterDisabledFastPathDoesNotTouchStateLock(t *testing.T) {
+	clearClusterTransport()
+	t.Cleanup(clearClusterTransport)
+
+	clusterState.Lock()
+	defer clusterState.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		clusterAcquire("room:1")
+		clusterRelease("room:1")
+		clusterPublish("room:1", []byte("hello"))
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("disabled cluster path blocked on cluster state lock")
+	}
+}
+
 func TestClusterPublishReportsTransportFailure(t *testing.T) {
 	clearClusterTransport()
 	t.Cleanup(clearClusterTransport)
