@@ -6,6 +6,8 @@ import (
 	"github.com/wonli/aqi/logger"
 )
 
+const clusterUserPrefix = "$user:"
+
 type clusterTransport interface {
 	Subscribe(topic string) error
 	Unsubscribe(topic string) error
@@ -19,6 +21,10 @@ var clusterState = struct {
 	refs      map[string]int
 }{
 	refs: make(map[string]int),
+}
+
+func clusterUserTopic(uid string) string {
+	return clusterUserPrefix + uid
 }
 
 func setClusterTransport(t clusterTransport) {
