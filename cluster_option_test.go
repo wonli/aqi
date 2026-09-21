@@ -40,7 +40,7 @@ func TestWithClusterTransportEnablesClusterAndStoresFactory(t *testing.T) {
 	if !config.Cluster {
 		t.Fatal("WithClusterTransport did not enable cluster mode")
 	}
-	if config.ClusterTransportFactory == nil {
+	if config.clusterTransportFactory == nil {
 		t.Fatal("WithClusterTransport did not retain factory")
 	}
 }
@@ -67,7 +67,7 @@ func TestClusterBootstrapCustomTransportBypassesRedisAQI(t *testing.T) {
 	sentinel := errors.New("custom transport factory invoked")
 	config := &AppConfig{
 		Cluster: true,
-		ClusterTransportFactory: func(handler ClusterMessageHandler) (ClusterTransport, error) {
+		clusterTransportFactory: func(handler ClusterMessageHandler) (ClusterTransport, error) {
 			if handler == nil {
 				t.Fatal("custom cluster transport factory received nil handler")
 			}
