@@ -47,38 +47,28 @@ func NewUser(uid string) *User {
 	return user
 }
 
-func (u *User) addSubTopic(topic *Topic) (int, bool) {
+func (u *User) AddSubTopic(topic *Topic) int {
 	u.Lock()
 	defer u.Unlock()
-
 	u.SubTopics[topic.Id] = topic
-	return len(u.SubTopics), len(u.AppClients) > 0
-}
-
-func (u *User) AddSubTopic(topic *Topic) int {
-	count, _ := u.addSubTopic(topic)
-	return count
+	return len(u.SubTopics)
 }
 
 func (u *User) unsubscribeTopic(topicId string) (int, bool) {
 	u.Lock()
 	topic, ok := u.SubTopics[topicId]
-	online := len(u.AppClients) > 0
 	if ok {
 		delete(u.SubTopics, topicId)
 	}
+	if ok && topic != nil {
+		topic.RemoveSubUser(u.Suid)
+	}
 	remaining := len(u.SubTopics)
 	u.Unlock()
-
 	if !ok {
 		return remaining, false
 	}
-	if topic != nil {
-		topic.RemoveSubUser(u.Suid)
-	}
-	if online && clusterEnabled() {
-		clusterRelease(clusterTopicChannel(topicId))
-	}
+	clusterSyncUser(u, clusterTopicChannel(topicId))
 	return remaining, true
 }
 
@@ -89,26 +79,18 @@ func (u *User) UnsubTopic(topicId string) int {
 
 func (u *User) UnsubAllTopics() int {
 	u.Lock()
-	online := len(u.AppClients) > 0
-	topics := make([]*Topic, 0, len(u.SubTopics))
-	for topicId, topic := range u.SubTopics {
+	topics := u.subTopicIDsLocked()
+	for topicID, topic := range u.SubTopics {
 		if topic != nil {
-			topics = append(topics, topic)
+			topic.RemoveSubUser(u.Suid)
 		}
-		delete(u.SubTopics, topicId)
+		delete(u.SubTopics, topicID)
 	}
-	remaining := len(u.SubTopics)
 	u.Unlock()
-
-	distributed := online && clusterEnabled()
-	for _, topic := range topics {
-		topic.RemoveSubUser(u.Suid)
-		if distributed {
-			clusterRelease(clusterTopicChannel(topic.Id))
-		}
+	for _, topicID := range topics {
+		clusterSyncUser(u, clusterTopicChannel(topicID))
 	}
-
-	return remaining
+	return 0
 }
 
 func (u *User) subTopicIDsLocked() []string {
@@ -173,23 +155,9 @@ func (u *User) appLogin(appId string, client *Client) error {
 	u.Unlock()
 
 	if distributed && becameOnline {
-		userChannel := clusterUserChannel(u.Suid)
-		clusterAcquire(userChannel)
-		if !u.IsOnline() {
-			clusterRelease(userChannel)
-		}
-
+		clusterSyncUser(u, clusterUserChannel(u.Suid))
 		for _, topicID := range retainedTopics {
-			topicChannel := clusterTopicChannel(topicID)
-			clusterAcquire(topicChannel)
-
-			u.RLock()
-			_, stillSubscribed := u.SubTopics[topicID]
-			stillOnline := len(u.AppClients) > 0
-			u.RUnlock()
-			if !stillSubscribed || !stillOnline {
-				clusterRelease(topicChannel)
-			}
+			clusterSyncUser(u, clusterTopicChannel(topicID))
 		}
 	}
 
@@ -222,9 +190,9 @@ func (u *User) appLogout(appId string, logoutClient *Client) error {
 	u.Unlock()
 
 	if distributed && becameOffline {
-		clusterRelease(clusterUserChannel(u.Suid))
+		clusterSyncUser(u, clusterUserChannel(u.Suid))
 		for _, topicID := range retainedTopics {
-			clusterRelease(clusterTopicChannel(topicID))
+			clusterSyncUser(u, clusterTopicChannel(topicID))
 		}
 	}
 

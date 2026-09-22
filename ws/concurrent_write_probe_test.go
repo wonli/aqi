@@ -82,7 +82,7 @@ func TestClientConcurrentConnectionWriteProbe(t *testing.T) {
 
 	for i := 0; i < 200 && time.Now().Before(deadline); i++ {
 		client.SendMsg(payload)
-		client.SendBinary(payload)
+		client.sendFrame(frame{op: ws.OpBinary, data: payload})
 		if err := wsutil.WriteClientMessage(peerConn, ws.OpPing, nil); err != nil {
 			break
 		}

@@ -95,18 +95,35 @@ func TestReconnectConcurrentUnsubscribeDoesNotCreateGhostTopicRef(t *testing.T) 
 	}
 }
 
-func TestTopicAddSubUserCapturesOnlineState(t *testing.T) {
-	topic := &Topic{Id: "room:1"}
-	offline := newTopicTestUser("offline", false)
-	online := newTopicTestUser("online", true)
-
-	added, wasOnline := topic.addSubUser(offline)
-	if !added || wasOnline {
-		t.Fatalf("offline add = added:%v online:%v, want true/false", added, wasOnline)
+func TestReconnectUnsubscribePreservesOtherUserRef(t *testing.T) {
+	clearClusterTransport()
+	t.Cleanup(clearClusterTransport)
+	transport := newLoginBlockingTransport()
+	setClusterTransport(transport)
+	pubsub := NewPubSub()
+	first := newTopicTestUser("A", true)
+	pubsub.Sub("room:1", first)
+	second := newClusterLifecycleUser("B")
+	pubsub.Sub("room:1", second)
+	done := make(chan error, 1)
+	go func() { done <- second.appLogin("ios", &Client{}) }()
+	select {
+	case <-transport.started:
+	case <-time.After(time.Second):
+		t.Fatal("login did not start")
 	}
-
-	added, wasOnline = topic.addSubUser(online)
-	if !added || !wasOnline {
-		t.Fatalf("online add = added:%v online:%v, want true/true", added, wasOnline)
+	second.UnsubTopic("room:1")
+	close(transport.allow)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	_, unsubs, _ := transport.counts(clusterTopicChannel("room:1"))
+	if unsubs != 0 {
+		t.Fatalf("unsubscribed shared topic %d times while A remains subscribed", unsubs)
+	}
+	pubsub.Unsub("room:1", first)
+	_, unsubs, _ = transport.counts(clusterTopicChannel("room:1"))
+	if unsubs != 1 {
+		t.Fatalf("last subscriber removal: unsubscribe count = %d, want 1", unsubs)
 	}
 }

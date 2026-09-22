@@ -75,6 +75,9 @@ func (r *redisCluster) Unsubscribe(channel string) error {
 	if pubsub == nil {
 		return nil
 	}
+	// go-redis removes the channel from its desired subscription set before
+	// writing UNSUBSCRIBE, including when the write fails. Reconnect therefore
+	// does not restore this channel; AQI need not retain a pending cleanup entry.
 	return pubsub.Unsubscribe(r.ctx, channel)
 }
 

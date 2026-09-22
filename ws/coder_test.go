@@ -221,3 +221,24 @@ func TestContextSendUsesRouteCoderWithoutBinaryAPI(t *testing.T) {
 		t.Fatal("Writer did not exit")
 	}
 }
+
+func TestBinaryResponseDisconnectsAfterSend(t *testing.T) {
+	server, peer := net.Pipe()
+	defer peer.Close()
+	client := &Client{Conn: server, Disconnecting: true}
+	client.initContext(context.Background())
+	defer client.Disconnect()
+	client.sendFrame(frame{op: ws.OpBinary, data: []byte("goodbye")})
+	done := make(chan struct{})
+	go func() { defer close(done); client.Write() }()
+	_ = peer.SetReadDeadline(time.Now().Add(time.Second))
+	data, op, err := wsutil.ReadServerData(peer)
+	require.NoError(t, err)
+	require.Equal(t, ws.OpBinary, op)
+	require.Equal(t, "goodbye", string(data))
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("binary response did not disconnect")
+	}
+}

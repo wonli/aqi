@@ -92,46 +92,14 @@ func TestInitClusterTransportRejectsSecondInitialization(t *testing.T) {
 	}
 }
 
-func TestClusterReferenceCountingUsesEdgeTransitions(t *testing.T) {
-	clearClusterTransport()
-	t.Cleanup(clearClusterTransport)
-
-	transport := newFakeClusterTransport()
-	setClusterTransport(transport)
-
-	clusterAcquire("room:1")
-	clusterAcquire("room:1")
-
-	subs, unsubs, _ := transport.counts("room:1")
-	if subs != 1 || unsubs != 0 {
-		t.Fatalf("after two acquires: subscribe=%d unsubscribe=%d, want 1/0", subs, unsubs)
-	}
-
-	clusterRelease("room:1")
-	subs, unsubs, _ = transport.counts("room:1")
-	if subs != 1 || unsubs != 0 {
-		t.Fatalf("after first release: subscribe=%d unsubscribe=%d, want 1/0", subs, unsubs)
-	}
-
-	clusterRelease("room:1")
-	subs, unsubs, _ = transport.counts("room:1")
-	if subs != 1 || unsubs != 1 {
-		t.Fatalf("after second release: subscribe=%d unsubscribe=%d, want 1/1", subs, unsubs)
-	}
-
-	clusterRelease("room:1")
-	_, unsubs, _ = transport.counts("room:1")
-	if unsubs != 1 {
-		t.Fatalf("duplicate release unsubscribed %d times, want 1", unsubs)
-	}
-}
-
 func TestClusterDisabledIsNoOp(t *testing.T) {
 	clearClusterTransport()
 	t.Cleanup(clearClusterTransport)
 
-	clusterAcquire("room:1")
-	clusterRelease("room:1")
+	pubsub := NewPubSub()
+	user := newTopicTestUser("A", true)
+	pubsub.Sub("room:1", user)
+	pubsub.Unsub("room:1", user)
 	if clusterPublish("room:1", []byte("hello")) {
 		t.Fatal("publish reported success with cluster disabled")
 	}
@@ -147,8 +115,7 @@ func TestClusterDisabledFastPathDoesNotTouchTopicLock(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		clusterAcquire("room:1")
-		clusterRelease("room:1")
+		clusterSyncUser(newTopicTestUser("A", true), "room:1")
 		clusterPublish("room:1", []byte("hello"))
 		close(done)
 	}()
@@ -227,16 +194,18 @@ func TestClusterAcquireReleasePreservesFinalZeroSubscriptionState(t *testing.T) 
 	transport := newBlockingClusterTransport()
 	setClusterTransport(transport)
 
+	pubsub := NewPubSub()
+	user := newTopicTestUser("A", true)
 	acquireDone := make(chan struct{})
 	go func() {
-		clusterAcquire("room:1")
+		pubsub.Sub("room:1", user)
 		close(acquireDone)
 	}()
 	<-transport.subscribeStarted
 
 	releaseDone := make(chan struct{})
 	go func() {
-		clusterRelease("room:1")
+		pubsub.Unsub("room:1", user)
 		close(releaseDone)
 	}()
 

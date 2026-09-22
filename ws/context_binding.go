@@ -8,10 +8,12 @@ import (
 
 func (c *Context) Bind(s any) error {
 	coder := defaultJSONCoder
-	params := []byte(c.Params)
+	var params []byte
 
 	if c.request != nil {
 		params = c.request.Params
+	} else {
+		params = []byte(c.Params)
 	}
 	if c.route != nil && c.route.coder != nil {
 		coder = c.route.coder

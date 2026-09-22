@@ -365,7 +365,7 @@ func (c *Client) Write() {
 				return
 			}
 
-			if f.op == ws.OpClose {
+			if f.op == ws.OpClose || (f.op == ws.OpBinary && c.Disconnecting) {
 				return
 			}
 

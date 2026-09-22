@@ -19,3 +19,10 @@ func clearClusterTransport() {
 		_ = old.transport.Close()
 	}
 }
+
+func clusterCurrentInstanceID() [clusterInstanceIDSize]byte {
+	if c := clusterState.Load(); c != nil {
+		return c.instanceID
+	}
+	return [clusterInstanceIDSize]byte{}
+}

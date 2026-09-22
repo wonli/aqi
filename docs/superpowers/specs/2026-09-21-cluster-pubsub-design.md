@@ -86,6 +86,10 @@ type ClusterMessageHandler func(channel string, data []byte)
 type ClusterTransportFactory func(ClusterMessageHandler) (ClusterTransport, error)
 ```
 
+`Subscribe` and `Unsubscribe` are idempotent desired-state operations. An open transport must record the latest requested membership before returning, even when it returns an error. Errors report an immediate backend failure; they do not discard the requested state. The transport owns reconciliation after recovery without requiring further AQI calls. A newer request supersedes older pending operations, including an unsubscribe followed by a subscribe during an outage. Implementations must support concurrent calls for different channels. `Close` stops reconciliation and releases subscriptions; calls after close may fail.
+
+AQI tracks local owners separately from whether a subscribe call succeeded. It may repeat subscription calls during later local transitions, but does not run a subscription retry worker. Once the final owner leaves, AQI sends the unsubscribe intent and deletes its local channel record regardless of the returned error. Custom transports that only attempt a network command and discard failed intent must be adapted to this contract.
+
 The factory is invoked after AQI configuration has loaded. AQI supplies the inbound `ClusterMessageHandler`; a custom transport invokes that handler whenever it receives a message from the underlying transport.
 
 The transport treats both `channel` and `data` as opaque AQI values:
@@ -227,7 +231,7 @@ The same-app replacement path must not cause false `1 -> 0 -> 1` transitions whe
 
 Subscription membership and the online snapshot used for Cluster reference acquisition are read under the same `User` lock so concurrent login/subscription changes cannot double-acquire a topic reference.
 
-Reconnect topic reacquisition revalidates local membership after the transport edge to avoid leaving a ghost Cluster reference when an unsubscribe races the reconnect.
+Per-channel synchronization reconciles each user’s ownership against current local membership and online state. Delayed reconnect or unsubscribe operations cannot release another user’s ownership.
 
 ## Failure semantics
 
@@ -237,7 +241,7 @@ Cluster is realtime best-effort transport.
 - Local delivery should continue where possible.
 - Offline/reconnect gaps can lose realtime messages.
 - AQI does not replay missed messages.
-- A transport implementation may internally reconnect or buffer, but AQI does not promote that behavior into a reliability guarantee.
+- Transports must retain and reconcile subscription intent after recovery. This does not guarantee message delivery or require buffering/replaying published messages.
 
 Businesses that require reliable delivery must persist and reconcile messages themselves.
 

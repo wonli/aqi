@@ -12,14 +12,18 @@ type Topic struct {
 	SubHandlers sync.Map //SubHandlers map[string]func(msg *TopicMsg) //内部组件间通知
 }
 
-func (a *Topic) addSubUser(user *User) (bool, bool) {
+func (a *Topic) addSubUser(user *User) bool {
 	if user == nil {
-		return false, false
+		return false
 	}
 
-	_, loaded := a.SubUsers.LoadOrStore(user.Suid, time.Now())
-	_, online := user.addSubTopic(a)
-	return !loaded, online
+	user.Lock()
+	_, loaded := user.SubTopics[a.Id]
+	a.SubUsers.LoadOrStore(user.Suid, time.Now())
+	user.SubTopics[a.Id] = a
+	user.Unlock()
+	clusterSyncUser(user, clusterTopicChannel(a.Id))
+	return !loaded
 }
 
 // AddSubUser preserves the existing public API; cluster transition details stay internal.
@@ -31,14 +35,9 @@ func (a *Topic) AddSubHandle(f func(msg *TopicMsg)) {
 	a.SubHandlers.LoadOrStore(a.Id, f)
 }
 
-func (a *Topic) removeSubUser(suid string) bool {
-	_, loaded := a.SubUsers.LoadAndDelete(suid)
-	return loaded
-}
-
 // RemoveSubUser 从主题订阅集合中移除指定用户
 func (a *Topic) RemoveSubUser(suid string) {
-	a.removeSubUser(suid)
+	a.SubUsers.Delete(suid)
 }
 
 func (a *Topic) SendToSubUser(msg *TopicMsg) {

@@ -22,6 +22,17 @@ var errClusterAlreadyInitialized = errors.New("aqi cluster: transport already in
 
 // ClusterTransport is the minimal transport contract AQI needs for inter-node routing.
 // Channel names and payload bytes are opaque to the transport and must be preserved.
+//
+// Subscribe and Unsubscribe are idempotent desired-state operations. Before
+// returning, including on error, an open transport must retain the latest desired
+// membership for that channel. An error reports failure to apply it immediately,
+// not rejection of the desired state. The transport must reconcile that state
+// after recovery without requiring another AQI call. Newer intent must supersede
+// older pending operations, so a delayed unsubscribe cannot undo a new subscribe.
+// AQI may repeat calls, but does not schedule subscription retries and releases
+// its local channel state after the last owner leaves, even if Unsubscribe fails.
+// Implementations must support concurrent calls for different channels. Close
+// ends reconciliation and releases subscriptions; calls after Close may fail.
 type ClusterTransport interface {
 	Subscribe(channel string) error
 	Unsubscribe(channel string) error
@@ -42,8 +53,15 @@ type clusterRuntime struct {
 	transport  ClusterTransport
 	instanceID [clusterInstanceIDSize]byte
 
-	refsMu sync.Mutex
-	refs   map[string]int
+	subscriptionsMu sync.Mutex
+	subscriptions   map[string]*clusterSubscription
+}
+
+// Subscription fields are protected by the channel lock. The runtime mutex
+// protects only the map shared by different channels.
+type clusterSubscription struct {
+	owners     map[*User]struct{}
+	subscribed bool
 }
 
 var clusterState atomic.Pointer[clusterRuntime]
@@ -78,9 +96,9 @@ func newClusterInstanceID() ([clusterInstanceIDSize]byte, error) {
 
 func installClusterTransport(t ClusterTransport, instanceID [clusterInstanceIDSize]byte) bool {
 	return clusterState.CompareAndSwap(nil, &clusterRuntime{
-		transport:  t,
-		instanceID: instanceID,
-		refs:       make(map[string]int),
+		transport:     t,
+		instanceID:    instanceID,
+		subscriptions: make(map[string]*clusterSubscription),
 	})
 }
 
@@ -114,58 +132,61 @@ func InitClusterTransport(factory ClusterTransportFactory) error {
 	return nil
 }
 
-func clusterAcquire(topic string) {
+// clusterSyncUser reconciles one user's owned reference with current local state.
+// The channel lock orders both reference changes and transport calls. Never call
+// this while holding the user lock: inbound delivery also reads user state.
+func clusterSyncUser(u *User, channel string) {
 	c := clusterState.Load()
-	if topic == "" || c == nil {
+	if c == nil {
 		return
 	}
-
-	topicMu := clusterTopicMutex(topic)
+	topicMu := clusterTopicMutex(channel)
 	topicMu.Lock()
 	defer topicMu.Unlock()
 
-	c.refsMu.Lock()
-	previous := c.refs[topic]
-	c.refs[topic] = previous + 1
-	c.refsMu.Unlock()
-
-	if previous == 0 {
-		if err := c.transport.Subscribe(topic); err != nil {
-			clusterLogError("subscribe", topic, err)
+	u.RLock()
+	wanted := len(u.AppClients) > 0
+	if channel != clusterUserChannel(u.Suid) {
+		_, subscribed := u.SubTopics[strings.TrimPrefix(channel, clusterTopicPrefix)]
+		wanted = wanted && subscribed
+	}
+	c.subscriptionsMu.Lock()
+	subscription := c.subscriptions[channel]
+	if subscription == nil && wanted {
+		subscription = &clusterSubscription{owners: make(map[*User]struct{})}
+		c.subscriptions[channel] = subscription
+	}
+	c.subscriptionsMu.Unlock()
+	if subscription != nil {
+		if wanted {
+			subscription.owners[u] = struct{}{}
+		} else {
+			delete(subscription.owners, u)
 		}
 	}
-}
-
-func clusterRelease(topic string) {
-	c := clusterState.Load()
-	if topic == "" || c == nil {
+	u.RUnlock()
+	if subscription == nil {
 		return
 	}
 
-	topicMu := clusterTopicMutex(topic)
-	topicMu.Lock()
-	defer topicMu.Unlock()
-
-	c.refsMu.Lock()
-	current := c.refs[topic]
-	if current <= 0 {
-		c.refsMu.Unlock()
+	if len(subscription.owners) > 0 {
+		if !subscription.subscribed {
+			if err := c.transport.Subscribe(channel); err != nil {
+				clusterLogError("subscribe", channel, err)
+			} else {
+				subscription.subscribed = true
+			}
+		}
 		return
 	}
-
-	current--
-	if current == 0 {
-		delete(c.refs, topic)
-	} else {
-		c.refs[topic] = current
+	// The transport retains the unsubscribe intent even on error and owns recovery.
+	// No owner remains, so AQI must release its bookkeeping regardless of delivery.
+	if err := c.transport.Unsubscribe(channel); err != nil {
+		clusterLogError("unsubscribe", channel, err)
 	}
-	c.refsMu.Unlock()
-
-	if current == 0 {
-		if err := c.transport.Unsubscribe(topic); err != nil {
-			clusterLogError("unsubscribe", topic, err)
-		}
-	}
+	c.subscriptionsMu.Lock()
+	delete(c.subscriptions, channel)
+	c.subscriptionsMu.Unlock()
 }
 
 func clusterPublish(topic string, data []byte) bool {
@@ -179,13 +200,6 @@ func clusterPublish(topic string, data []byte) bool {
 		return false
 	}
 	return true
-}
-
-func clusterCurrentInstanceID() [clusterInstanceIDSize]byte {
-	if c := clusterState.Load(); c != nil {
-		return c.instanceID
-	}
-	return [clusterInstanceIDSize]byte{}
 }
 
 func clusterEncodeWire(origin [clusterInstanceIDSize]byte, data []byte) []byte {
